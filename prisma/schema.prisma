@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String           @id @default(uuid())
+  name            String
+  email           String           @unique
+  password        String
+  role            UserRole         @default(GYM_OWNER)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  clients         Client[]
+  expenses        Expense[]
+  importedClients ImportedClient[]
+  payments        Payment[]
+
+  @@map("users")
+}
+
+model Client {
+  id             String    @id @default(uuid())
+  name           String
+  phone          String
+  email          String?
+  membershipType String    @default("monthly")
+  startDate      DateTime  @default(now())
+  endDate        DateTime  @default(now())
+  isActive       Boolean   @default(true)
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  userId         String
+  entryNumber    String?
+  photoFilename  String?
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments       Payment[]
+
+  @@map("clients")
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  amount         Decimal       @db.Decimal(10, 2)
+  method         PaymentMethod @default(CASH)
+  note           String?
+  paidAt         DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+  clientId       String
+  userId         String
+  endDate        DateTime?
+  membershipType String?
+  client         Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model Expense {
+  id          String          @id @default(uuid())
+  title       String
+  amount      Decimal         @db.Decimal(10, 2)
+  category    ExpenseCategory
+  description String?
+  date        DateTime        @default(now())
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("expenses")
+}
+
+model ImportedClient {
+  id                       String       @id @default(uuid())
+  entryNumber              String?
+  addressRaw               String?
+  membershipDurationMonths Int          @default(1)
+  membershipAmount         Decimal?     @db.Decimal(10, 2)
+  paymentMode              String?
+  joinDate                 DateTime?
+  photoFilename            String?
+  sender                   String?
+  clientName               String?
+  clientPhone              String?
+  confidenceScore          Float        @default(0)
+  needsManualReview        Boolean      @default(true)
+  status                   ImportStatus @default(PENDING)
+  reviewNote               String?
+  reviewedAt               DateTime?
+  resolvedClientId         String?
+  userId                   String
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @updatedAt
+  user                     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("imported_clients")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  GYM_OWNER
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  UPI
+  BANK_TRANSFER
+}
+
+enum ExpenseCategory {
+  RENT
+  UTILITIES
+  EQUIPMENT
+  SALARIES
+  MAINTENANCE
+  MARKETING
+  OTHER
+}
+
+enum ImportStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
