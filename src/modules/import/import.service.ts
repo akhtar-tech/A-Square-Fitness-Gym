@@ -7,24 +7,28 @@ import {
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import * as path from 'path';
+import { PaymentMethod, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WhatsAppParserService, ParsedEntry } from './whatsapp-parser.service';
 import { ReviewImportDto } from './dto/review-import.dto';
 import { ApproveImportDto } from './dto/approve-import.dto';
+import {
+  PAYMENT_MAP,
+  durationToType,
+} from '../../common/constants/membership.constants';
 
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
 
-const PAYMENT_MAP: Record<string, string> = {
-  online: 'UPI', upi: 'UPI', gpay: 'UPI', phonepe: 'UPI', paytm: 'UPI',
-  card: 'CARD', cash: 'CASH', bank: 'BANK_TRANSFER',
-  neft: 'BANK_TRANSFER', imps: 'BANK_TRANSFER', split: 'CASH',
-};
-
-function durationToType(months: number): string {
-  if (months === 1) return 'monthly';
-  if (months === 3) return 'quarterly';
-  if (months === 12) return 'yearly';
-  return 'custom';
+interface ImportRecord {
+  joinDate: Date | null;
+  membershipDurationMonths: number;
+  membershipAmount: { toNumber: () => number } | number | null;
+  paymentMode: string | null;
+  clientName: string | null | undefined;
+  clientPhone: string | null | undefined;
+  addressRaw: string | null;
+  photoFilename: string | null;
+  entryNumber: string | null;
 }
 
 @Injectable()
@@ -52,7 +56,11 @@ export class ImportService {
   }
 
   // ── Core: parse → store → auto-approve clean entries ────────────────
-  private async _processAndStore(userId: string, text: string, photosDir: string | null) {
+  private async _processAndStore(
+    userId: string,
+    text: string,
+    photosDir: string | null,
+  ) {
     await fs.mkdir(UPLOADS_DIR, { recursive: true });
 
     const entries = this.parser.parse(text);
@@ -60,7 +68,9 @@ export class ImportService {
       throw new BadRequestException('No gym entries found in the file');
     }
 
-    let imported = 0, skipped = 0, autoApproved = 0;
+    let imported = 0,
+      skipped = 0,
+      autoApproved = 0;
 
     for (const entry of entries) {
       // Skip duplicates
@@ -68,14 +78,20 @@ export class ImportService {
         const exists = await this.prisma.importedClient.findFirst({
           where: { userId, entryNumber: entry.entryNumber },
         });
-        if (exists) { skipped++; continue; }
+        if (exists) {
+          skipped++;
+          continue;
+        }
       }
 
       // Copy photo from source folder to uploads/
       let photo = entry.photoFilename;
       if (photo && photosDir) {
         try {
-          await fs.copyFile(path.join(photosDir, photo), path.join(UPLOADS_DIR, photo));
+          await fs.copyFile(
+            path.join(photosDir, photo),
+            path.join(UPLOADS_DIR, photo),
+          );
         } catch {
           photo = null; // photo file not found on disk
         }
@@ -108,55 +124,75 @@ export class ImportService {
           await this._createClientFromRecord(userId, record);
           await this.prisma.importedClient.update({
             where: { id: record.id },
-            data: { status: 'APPROVED', reviewedAt: new Date(), resolvedClientId: record.id },
+            data: {
+              status: 'APPROVED',
+              reviewedAt: new Date(),
+              resolvedClientId: record.id,
+            },
           });
           autoApproved++;
-        } catch { /* stays as PENDING */ }
+        } catch {
+          /* stays as PENDING */
+        }
       }
     }
 
-    return { imported, skipped, autoApproved, needsReview: imported - autoApproved };
+    return {
+      imported,
+      skipped,
+      autoApproved,
+      needsReview: imported - autoApproved,
+    };
   }
 
   // ── Create a real Client + Payment from a staging record ─────────────
-  private async _createClientFromRecord(userId: string, record: any) {
+  private async _createClientFromRecord(userId: string, record: ImportRecord) {
     const startDate = record.joinDate ?? new Date();
     const endDate = new Date(startDate);
     endDate.setMonth(endDate.getMonth() + record.membershipDurationMonths);
 
     const membershipType = durationToType(record.membershipDurationMonths);
-    const feePaid = record.membershipAmount ?? 0;
-    const method = PAYMENT_MAP[record.paymentMode?.toLowerCase() ?? ''] ?? 'CASH';
+    const feePaid =
+      typeof record.membershipAmount === 'object' &&
+      record.membershipAmount !== null &&
+      'toNumber' in record.membershipAmount
+        ? record.membershipAmount.toNumber()
+        : (record.membershipAmount ?? 0);
+    const method =
+      PAYMENT_MAP[record.paymentMode?.toLowerCase() ?? ''] ?? 'CASH';
 
-    const client = await this.prisma.client.create({
-      data: {
-        userId,
-        name: record.clientName,
-        phone: record.clientPhone,
-        notes: record.addressRaw ?? undefined,
-        membershipType,
-        startDate,
-        endDate,
-        photoFilename: record.photoFilename ?? undefined,
-        entryNumber: record.entryNumber ?? undefined,
-      },
+    // Use transaction to ensure client + payment are created atomically
+    return await this.prisma.$transaction(async (tx) => {
+      const client = await tx.client.create({
+        data: {
+          userId,
+          name: record.clientName ?? '',
+          phone: record.clientPhone ?? '',
+          notes: record.addressRaw ?? undefined,
+          membershipType,
+          startDate,
+          endDate,
+          photoFilename: record.photoFilename ?? undefined,
+          entryNumber: record.entryNumber ?? undefined,
+        },
+      });
+
+      // Always create an initial payment — single source of truth for fee/plan/expiry
+      await tx.payment.create({
+        data: {
+          userId,
+          clientId: client.id,
+          amount: feePaid,
+          method: method as PaymentMethod,
+          paidAt: startDate,
+          membershipType,
+          endDate,
+          note: `Initial payment`,
+        },
+      });
+
+      return client;
     });
-
-    // Always create an initial payment — single source of truth for fee/plan/expiry
-    await this.prisma.payment.create({
-      data: {
-        userId,
-        clientId: client.id,
-        amount: feePaid,
-        method: method as any,
-        paidAt: startDate,
-        membershipType,
-        endDate,
-        note: `Initial payment`,
-      },
-    });
-
-    return client;
   }
 
   // ── List pending ──────────────────────────────────────────────────────
@@ -169,8 +205,13 @@ export class ImportService {
 
   // ── List all (grouped by entryNumber) ────────────────────────────────
   async findAll(userId: string, status?: string) {
+    const where: Prisma.ImportedClientWhereInput = { userId };
+    if (status) {
+      where.status = status as Prisma.EnumImportStatusFilter;
+    }
+
     const records = await this.prisma.importedClient.findMany({
-      where: { userId, ...(status ? { status: status as any } : {}) },
+      where,
       orderBy: { createdAt: 'desc' },
     });
 
@@ -191,7 +232,9 @@ export class ImportService {
 
   // ── Get one ───────────────────────────────────────────────────────────
   async findOne(userId: string, id: string) {
-    const r = await this.prisma.importedClient.findFirst({ where: { id, userId } });
+    const r = await this.prisma.importedClient.findFirst({
+      where: { id, userId },
+    });
     if (!r) throw new NotFoundException('Record not found');
     return r;
   }
@@ -199,13 +242,17 @@ export class ImportService {
   // ── Patch staging record ──────────────────────────────────────────────
   async review(userId: string, id: string, dto: ReviewImportDto) {
     await this.findOne(userId, id);
-    return this.prisma.importedClient.update({ where: { id }, data: { ...dto } });
+    return this.prisma.importedClient.update({
+      where: { id },
+      data: { ...dto },
+    });
   }
 
   // ── Approve → create Client + Payment ────────────────────────────────
   async approve(userId: string, id: string, dto: ApproveImportDto) {
     const record = await this.findOne(userId, id);
-    if (record.status !== 'PENDING') throw new ConflictException(`Already ${record.status}`);
+    if (record.status !== 'PENDING')
+      throw new ConflictException(`Already ${record.status}`);
 
     const clientName = dto.clientName ?? record.clientName;
     const clientPhone = dto.clientPhone ?? record.clientPhone;
@@ -235,7 +282,8 @@ export class ImportService {
   // ── Reject ────────────────────────────────────────────────────────────
   async reject(userId: string, id: string, note?: string) {
     const record = await this.findOne(userId, id);
-    if (record.status !== 'PENDING') throw new ConflictException(`Already ${record.status}`);
+    if (record.status !== 'PENDING')
+      throw new ConflictException(`Already ${record.status}`);
 
     return this.prisma.importedClient.update({
       where: { id },

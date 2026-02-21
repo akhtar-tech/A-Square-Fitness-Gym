@@ -23,7 +23,7 @@ export class ExpensesService {
 
   async findAll(
     userId: string,
-    query: { month?: string; year?: string; category?: string },
+    query: { month?: number; year?: number; category?: string },
   ) {
     const where: Record<string, unknown> = { userId };
 
@@ -32,12 +32,8 @@ export class ExpensesService {
     }
 
     if (query.month && query.year) {
-      const start = new Date(
-        parseInt(query.year),
-        parseInt(query.month) - 1,
-        1,
-      );
-      const end = new Date(parseInt(query.year), parseInt(query.month), 1);
+      const start = new Date(query.year, query.month - 1, 1);
+      const end = new Date(query.year, query.month, 1);
       where.date = { gte: start, lt: end };
     }
 
@@ -47,10 +43,7 @@ export class ExpensesService {
     });
 
     // Aggregate total
-    const total = expenses.reduce(
-      (sum, e) => sum + Number(e.amount),
-      0,
-    );
+    const total = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
     return { expenses, total };
   }

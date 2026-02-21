@@ -3,5 +3,6 @@ declare const _default: () => {
     jwtSecret: string;
     jwtExpiresIn: string;
     databaseUrl: string | undefined;
+    allowedOrigins: string[];
 };
 export default _default;

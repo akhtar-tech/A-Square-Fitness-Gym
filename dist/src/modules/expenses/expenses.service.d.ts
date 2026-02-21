@@ -5,28 +5,28 @@ export declare class ExpensesService {
     private prisma;
     constructor(prisma: PrismaService);
     create(userId: string, dto: CreateExpenseDto): Promise<{
-        date: Date;
-        amount: import("@prisma/client/runtime/library").Decimal;
         id: string;
         createdAt: Date;
         updatedAt: Date;
         userId: string;
+        date: Date;
+        amount: import("@prisma/client/runtime/library").Decimal;
         title: string;
         category: import("@prisma/client").$Enums.ExpenseCategory;
         description: string | null;
     }>;
     findAll(userId: string, query: {
-        month?: string;
-        year?: string;
+        month?: number;
+        year?: number;
         category?: string;
     }): Promise<{
         expenses: {
-            date: Date;
-            amount: import("@prisma/client/runtime/library").Decimal;
             id: string;
             createdAt: Date;
             updatedAt: Date;
             userId: string;
+            date: Date;
+            amount: import("@prisma/client/runtime/library").Decimal;
             title: string;
             category: import("@prisma/client").$Enums.ExpenseCategory;
             description: string | null;
@@ -34,23 +34,23 @@ export declare class ExpensesService {
         total: number;
     }>;
     findOne(userId: string, expenseId: string): Promise<{
-        date: Date;
-        amount: import("@prisma/client/runtime/library").Decimal;
         id: string;
         createdAt: Date;
         updatedAt: Date;
         userId: string;
+        date: Date;
+        amount: import("@prisma/client/runtime/library").Decimal;
         title: string;
         category: import("@prisma/client").$Enums.ExpenseCategory;
         description: string | null;
     }>;
     update(userId: string, expenseId: string, dto: UpdateExpenseDto): Promise<{
-        date: Date;
-        amount: import("@prisma/client/runtime/library").Decimal;
         id: string;
         createdAt: Date;
         updatedAt: Date;
         userId: string;
+        date: Date;
+        amount: import("@prisma/client/runtime/library").Decimal;
         title: string;
         category: import("@prisma/client").$Enums.ExpenseCategory;
         description: string | null;

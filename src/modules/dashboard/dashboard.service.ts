@@ -11,8 +11,16 @@ export class DashboardService {
     const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     const in7Days = new Date();
     in7Days.setDate(now.getDate() + 7);
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfTomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const startOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
+    const startOfTomorrow = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+    );
 
     // Run all queries in parallel
     const [

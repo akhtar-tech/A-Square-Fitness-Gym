@@ -49,21 +49,8 @@ const fsSync = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const prisma_service_1 = require("../../prisma/prisma.service");
 const whatsapp_parser_service_1 = require("./whatsapp-parser.service");
+const membership_constants_1 = require("../../common/constants/membership.constants");
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
-const PAYMENT_MAP = {
-    online: 'UPI', upi: 'UPI', gpay: 'UPI', phonepe: 'UPI', paytm: 'UPI',
-    card: 'CARD', cash: 'CASH', bank: 'BANK_TRANSFER',
-    neft: 'BANK_TRANSFER', imps: 'BANK_TRANSFER', split: 'CASH',
-};
-function durationToType(months) {
-    if (months === 1)
-        return 'monthly';
-    if (months === 3)
-        return 'quarterly';
-    if (months === 12)
-        return 'yearly';
-    return 'custom';
-}
 let ImportService = class ImportService {
     prisma;
     parser;
@@ -133,48 +120,64 @@ let ImportService = class ImportService {
                     await this._createClientFromRecord(userId, record);
                     await this.prisma.importedClient.update({
                         where: { id: record.id },
-                        data: { status: 'APPROVED', reviewedAt: new Date(), resolvedClientId: record.id },
+                        data: {
+                            status: 'APPROVED',
+                            reviewedAt: new Date(),
+                            resolvedClientId: record.id,
+                        },
                     });
                     autoApproved++;
                 }
-                catch { }
+                catch {
+                }
             }
         }
-        return { imported, skipped, autoApproved, needsReview: imported - autoApproved };
+        return {
+            imported,
+            skipped,
+            autoApproved,
+            needsReview: imported - autoApproved,
+        };
     }
     async _createClientFromRecord(userId, record) {
         const startDate = record.joinDate ?? new Date();
         const endDate = new Date(startDate);
         endDate.setMonth(endDate.getMonth() + record.membershipDurationMonths);
-        const membershipType = durationToType(record.membershipDurationMonths);
-        const feePaid = record.membershipAmount ?? 0;
-        const method = PAYMENT_MAP[record.paymentMode?.toLowerCase() ?? ''] ?? 'CASH';
-        const client = await this.prisma.client.create({
-            data: {
-                userId,
-                name: record.clientName,
-                phone: record.clientPhone,
-                notes: record.addressRaw ?? undefined,
-                membershipType,
-                startDate,
-                endDate,
-                photoFilename: record.photoFilename ?? undefined,
-                entryNumber: record.entryNumber ?? undefined,
-            },
+        const membershipType = (0, membership_constants_1.durationToType)(record.membershipDurationMonths);
+        const feePaid = typeof record.membershipAmount === 'object' &&
+            record.membershipAmount !== null &&
+            'toNumber' in record.membershipAmount
+            ? record.membershipAmount.toNumber()
+            : (record.membershipAmount ?? 0);
+        const method = membership_constants_1.PAYMENT_MAP[record.paymentMode?.toLowerCase() ?? ''] ?? 'CASH';
+        return await this.prisma.$transaction(async (tx) => {
+            const client = await tx.client.create({
+                data: {
+                    userId,
+                    name: record.clientName ?? '',
+                    phone: record.clientPhone ?? '',
+                    notes: record.addressRaw ?? undefined,
+                    membershipType,
+                    startDate,
+                    endDate,
+                    photoFilename: record.photoFilename ?? undefined,
+                    entryNumber: record.entryNumber ?? undefined,
+                },
+            });
+            await tx.payment.create({
+                data: {
+                    userId,
+                    clientId: client.id,
+                    amount: feePaid,
+                    method: method,
+                    paidAt: startDate,
+                    membershipType,
+                    endDate,
+                    note: `Initial payment`,
+                },
+            });
+            return client;
         });
-        await this.prisma.payment.create({
-            data: {
-                userId,
-                clientId: client.id,
-                amount: feePaid,
-                method: method,
-                paidAt: startDate,
-                membershipType,
-                endDate,
-                note: `Initial payment`,
-            },
-        });
-        return client;
     }
     findPending(userId) {
         return this.prisma.importedClient.findMany({
@@ -183,8 +186,12 @@ let ImportService = class ImportService {
         });
     }
     async findAll(userId, status) {
+        const where = { userId };
+        if (status) {
+            where.status = status;
+        }
         const records = await this.prisma.importedClient.findMany({
-            where: { userId, ...(status ? { status: status } : {}) },
+            where,
             orderBy: { createdAt: 'desc' },
         });
         const grouped = new Map();
@@ -201,14 +208,19 @@ let ImportService = class ImportService {
         }));
     }
     async findOne(userId, id) {
-        const r = await this.prisma.importedClient.findFirst({ where: { id, userId } });
+        const r = await this.prisma.importedClient.findFirst({
+            where: { id, userId },
+        });
         if (!r)
             throw new common_1.NotFoundException('Record not found');
         return r;
     }
     async review(userId, id, dto) {
         await this.findOne(userId, id);
-        return this.prisma.importedClient.update({ where: { id }, data: { ...dto } });
+        return this.prisma.importedClient.update({
+            where: { id },
+            data: { ...dto },
+        });
     }
     async approve(userId, id, dto) {
         const record = await this.findOne(userId, id);

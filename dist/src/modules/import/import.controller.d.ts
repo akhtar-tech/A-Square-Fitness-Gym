@@ -33,13 +33,16 @@ export declare class ImportController {
         id: string;
     }): import("@prisma/client").Prisma.PrismaPromise<{
         id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string;
         entryNumber: string | null;
+        photoFilename: string | null;
         addressRaw: string | null;
         membershipDurationMonths: number;
         membershipAmount: import("@prisma/client/runtime/library").Decimal | null;
         paymentMode: string | null;
         joinDate: Date | null;
-        photoFilename: string | null;
         sender: string | null;
         clientName: string | null;
         clientPhone: string | null;
@@ -49,9 +52,6 @@ export declare class ImportController {
         reviewNote: string | null;
         reviewedAt: Date | null;
         resolvedClientId: string | null;
-        userId: string;
-        createdAt: Date;
-        updatedAt: Date;
     }[]>;
     findAll(user: {
         id: string;
@@ -60,13 +60,16 @@ export declare class ImportController {
         count: number;
         records: {
             id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            userId: string;
             entryNumber: string | null;
+            photoFilename: string | null;
             addressRaw: string | null;
             membershipDurationMonths: number;
             membershipAmount: import("@prisma/client/runtime/library").Decimal | null;
             paymentMode: string | null;
             joinDate: Date | null;
-            photoFilename: string | null;
             sender: string | null;
             clientName: string | null;
             clientPhone: string | null;
@@ -76,22 +79,22 @@ export declare class ImportController {
             reviewNote: string | null;
             reviewedAt: Date | null;
             resolvedClientId: string | null;
-            userId: string;
-            createdAt: Date;
-            updatedAt: Date;
         }[];
     }[]>;
     findOne(user: {
         id: string;
     }, id: string): Promise<{
         id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string;
         entryNumber: string | null;
+        photoFilename: string | null;
         addressRaw: string | null;
         membershipDurationMonths: number;
         membershipAmount: import("@prisma/client/runtime/library").Decimal | null;
         paymentMode: string | null;
         joinDate: Date | null;
-        photoFilename: string | null;
         sender: string | null;
         clientName: string | null;
         clientPhone: string | null;
@@ -101,21 +104,21 @@ export declare class ImportController {
         reviewNote: string | null;
         reviewedAt: Date | null;
         resolvedClientId: string | null;
-        userId: string;
-        createdAt: Date;
-        updatedAt: Date;
     }>;
     review(user: {
         id: string;
     }, id: string, dto: ReviewImportDto): Promise<{
         id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string;
         entryNumber: string | null;
+        photoFilename: string | null;
         addressRaw: string | null;
         membershipDurationMonths: number;
         membershipAmount: import("@prisma/client/runtime/library").Decimal | null;
         paymentMode: string | null;
         joinDate: Date | null;
-        photoFilename: string | null;
         sender: string | null;
         clientName: string | null;
         clientPhone: string | null;
@@ -125,9 +128,6 @@ export declare class ImportController {
         reviewNote: string | null;
         reviewedAt: Date | null;
         resolvedClientId: string | null;
-        userId: string;
-        createdAt: Date;
-        updatedAt: Date;
     }>;
     approve(user: {
         id: string;
@@ -139,13 +139,16 @@ export declare class ImportController {
         id: string;
     }, id: string, note?: string): Promise<{
         id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string;
         entryNumber: string | null;
+        photoFilename: string | null;
         addressRaw: string | null;
         membershipDurationMonths: number;
         membershipAmount: import("@prisma/client/runtime/library").Decimal | null;
         paymentMode: string | null;
         joinDate: Date | null;
-        photoFilename: string | null;
         sender: string | null;
         clientName: string | null;
         clientPhone: string | null;
@@ -155,8 +158,5 @@ export declare class ImportController {
         reviewNote: string | null;
         reviewedAt: Date | null;
         resolvedClientId: string | null;
-        userId: string;
-        createdAt: Date;
-        updatedAt: Date;
     }>;
 }

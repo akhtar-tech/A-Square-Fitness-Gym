@@ -2,13 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
-import { PaymentMethod } from '@prisma/client';
-
-const MEMBERSHIP_MONTHS: Record<string, number> = {
-  monthly: 1,
-  quarterly: 3,
-  yearly: 12,
-};
+import { PaymentMethod, Prisma } from '@prisma/client';
+import { MEMBERSHIP_MONTHS } from '../../common/constants/membership.constants';
 
 @Injectable()
 export class PaymentsService {
@@ -25,13 +20,16 @@ export class PaymentsService {
     let newEndDate: Date | null = null;
 
     if (dto.extendMembership !== 'none') {
-      const currentEnd = client.endDate < new Date() ? new Date() : client.endDate;
+      const currentEnd =
+        client.endDate < new Date() ? new Date() : client.endDate;
       newEndDate =
         dto.extendMembership === 'custom' && dto.newEndDate
           ? new Date(dto.newEndDate)
           : (() => {
               const d = new Date(currentEnd);
-              d.setMonth(d.getMonth() + (MEMBERSHIP_MONTHS[dto.extendMembership] ?? 1));
+              d.setMonth(
+                d.getMonth() + (MEMBERSHIP_MONTHS[dto.extendMembership] ?? 1),
+              );
               return d;
             })();
       newMembershipType = dto.extendMembership;
@@ -49,7 +47,16 @@ export class PaymentsService {
         clientId: dto.clientId,
         userId,
       },
-      include: { client: { select: { name: true, phone: true, photoFilename: true, entryNumber: true } } },
+      include: {
+        client: {
+          select: {
+            name: true,
+            phone: true,
+            photoFilename: true,
+            entryNumber: true,
+          },
+        },
+      },
     });
 
     // ── Sync client cache ──────────────────────────────────────────
@@ -72,46 +79,91 @@ export class PaymentsService {
   }
 
   async findAll(
-  userId: string,
-  query: { clientId?: string; month?: string; year?: string },
-) {
-  const where: any = { userId };
-
-  if (query.clientId) where.clientId = query.clientId;
-
-  if (query.month && query.year) {
-    const start = new Date(+query.year, +query.month - 1, 1);
-    const end = new Date(+query.year, +query.month, 1);
-    where.paidAt = { gte: start, lt: end };
-  }
-
-  const latestPerClient = await this.prisma.payment.groupBy({
-    by: ['clientId'],
-    where,
-    _max: { paidAt: true },
-  });
-
-  return this.prisma.payment.findMany({
-    where: {
-      OR: latestPerClient.map(p => ({
-        clientId: p.clientId,
-        paidAt: p._max.paidAt!,
-      })),
+    userId: string,
+    query: {
+      clientId?: string;
+      month?: number;
+      year?: number;
+      skip?: number;
+      take?: number;
     },
-    orderBy: { paidAt: 'desc' },
-    include: {
-      client: {
-        select: {
-          name: true,
-          phone: true,
-          photoFilename: true,
-          entryNumber: true,
+  ) {
+    const where: Prisma.PaymentWhereInput = { userId };
+
+    if (query.clientId) where.clientId = query.clientId;
+
+    if (query.month && query.year) {
+      const start = new Date(query.year, query.month - 1, 1);
+      const end = new Date(query.year, query.month, 1);
+      where.paidAt = { gte: start, lt: end };
+    }
+
+    // If filtering by specific clientId, return ALL payments for that client
+    if (query.clientId) {
+      const total = await this.prisma.payment.count({ where });
+      const data = await this.prisma.payment.findMany({
+        where,
+        orderBy: { paidAt: 'desc' },
+        include: {
+          client: {
+            select: {
+              name: true,
+              phone: true,
+              photoFilename: true,
+              entryNumber: true,
+            },
+          },
+        },
+        skip: query.skip ?? 0,
+        take: query.take ?? 100,
+      });
+
+      return {
+        data,
+        total,
+        skip: query.skip ?? 0,
+        take: query.take ?? 100,
+        hasMore: (query.skip ?? 0) + data.length < total,
+      };
+    }
+
+    // Otherwise, return only the latest payment per client (for Payments page)
+    const latestPerClient = await this.prisma.payment.groupBy({
+      by: ['clientId'],
+      where,
+      _max: { paidAt: true },
+    });
+
+    const data = await this.prisma.payment.findMany({
+      where: {
+        OR: latestPerClient.map((p) => ({
+          clientId: p.clientId,
+          paidAt: p._max.paidAt!,
+        })),
+      },
+      orderBy: { paidAt: 'desc' },
+      include: {
+        client: {
+          select: {
+            name: true,
+            phone: true,
+            photoFilename: true,
+            entryNumber: true,
+          },
         },
       },
-    },
-  });
-}
+      skip: query.skip ?? 0,
+      take: query.take ?? 50,
+    });
 
+    return {
+      data,
+      total: data.length,
+      skip: query.skip ?? 0,
+      take: query.take ?? 50,
+      hasMore: false,
+    };
+  }
 
   async findOne(userId: string, paymentId: string) {
     const payment = await this.prisma.payment.findFirst({
@@ -161,27 +213,33 @@ export class PaymentsService {
     const payment = await this.findOne(userId, paymentId);
     const { clientId } = payment;
 
-    await this.prisma.payment.delete({ where: { id: paymentId } });
+    // Use transaction to ensure payment deletion and client cache update are atomic
+    return await this.prisma.$transaction(async (tx) => {
+      await tx.payment.delete({ where: { id: paymentId } });
 
-    // ── Restore client cache from the new last payment ─────────────
-    const prev = await this.prisma.payment.findFirst({
-      where: { clientId, userId },
-      orderBy: { paidAt: 'desc' },
+      // ── Restore client cache from the new last payment ─────────────
+      const prev = await tx.payment.findFirst({
+        where: { clientId, userId },
+        orderBy: { paidAt: 'desc' },
+      });
+
+      if (prev) {
+        // Restore to whatever the previous payment stored
+        const restore: Record<string, unknown> = {};
+        if (prev.membershipType && prev.endDate) {
+          restore.membershipType = prev.membershipType;
+          restore.endDate = prev.endDate;
+        }
+        if (Object.keys(restore).length > 0) {
+          await tx.client.update({
+            where: { id: clientId },
+            data: restore,
+          });
+        }
+      }
+      // If no payments remain the client fields stay as-is (manual correction if needed)
+
+      return { message: 'Payment deleted' };
     });
-
-    if (prev) {
-      // Restore to whatever the previous payment stored
-      const restore: Record<string, unknown> = {};
-      if (prev.membershipType && prev.endDate) {
-        restore.membershipType = prev.membershipType;
-        restore.endDate = prev.endDate;
-      }
-      if (Object.keys(restore).length > 0) {
-        await this.prisma.client.update({ where: { id: clientId }, data: restore });
-      }
-    }
-    // If no payments remain the client fields stay as-is (manual correction if needed)
-
-    return { message: 'Payment deleted' };
   }
 }

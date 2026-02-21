@@ -49,7 +49,18 @@ __decorate([
     __metadata("design:type", Number)
 ], ReviewImportDto.prototype, "membershipAmount", void 0);
 __decorate([
-    (0, class_validator_1.IsIn)(['online', 'cash', 'upi', 'card', 'bank', 'neft', 'imps', 'gpay', 'phonepe', 'paytm']),
+    (0, class_validator_1.IsIn)([
+        'online',
+        'cash',
+        'upi',
+        'card',
+        'bank',
+        'neft',
+        'imps',
+        'gpay',
+        'phonepe',
+        'paytm',
+    ]),
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", String)
 ], ReviewImportDto.prototype, "paymentMode", void 0);

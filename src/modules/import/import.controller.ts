@@ -79,8 +79,12 @@ export class ImportController {
     @CurrentUser() user: { id: string },
     @Body('entryFolderPath') entryFolderPath: string,
   ) {
-    if (!entryFolderPath) throw new BadRequestException('entryFolderPath is required');
-    return this.importService.enrichPendingFromEntryFile(user.id, entryFolderPath);
+    if (!entryFolderPath)
+      throw new BadRequestException('entryFolderPath is required');
+    return this.importService.enrichPendingFromEntryFile(
+      user.id,
+      entryFolderPath,
+    );
   }
 
   /** GET /api/v1/import/pending */

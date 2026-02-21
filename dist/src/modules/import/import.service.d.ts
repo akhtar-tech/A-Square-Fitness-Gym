@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WhatsAppParserService } from './whatsapp-parser.service';
 import { ReviewImportDto } from './dto/review-import.dto';
@@ -20,15 +21,18 @@ export declare class ImportService {
     }>;
     private _processAndStore;
     private _createClientFromRecord;
-    findPending(userId: string): import("@prisma/client").Prisma.PrismaPromise<{
+    findPending(userId: string): Prisma.PrismaPromise<{
         id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string;
         entryNumber: string | null;
+        photoFilename: string | null;
         addressRaw: string | null;
         membershipDurationMonths: number;
-        membershipAmount: import("@prisma/client/runtime/library").Decimal | null;
+        membershipAmount: Prisma.Decimal | null;
         paymentMode: string | null;
         joinDate: Date | null;
-        photoFilename: string | null;
         sender: string | null;
         clientName: string | null;
         clientPhone: string | null;
@@ -38,22 +42,22 @@ export declare class ImportService {
         reviewNote: string | null;
         reviewedAt: Date | null;
         resolvedClientId: string | null;
-        userId: string;
-        createdAt: Date;
-        updatedAt: Date;
     }[]>;
     findAll(userId: string, status?: string): Promise<{
         entryNumber: string | null;
         count: number;
         records: {
             id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            userId: string;
             entryNumber: string | null;
+            photoFilename: string | null;
             addressRaw: string | null;
             membershipDurationMonths: number;
-            membershipAmount: import("@prisma/client/runtime/library").Decimal | null;
+            membershipAmount: Prisma.Decimal | null;
             paymentMode: string | null;
             joinDate: Date | null;
-            photoFilename: string | null;
             sender: string | null;
             clientName: string | null;
             clientPhone: string | null;
@@ -63,20 +67,20 @@ export declare class ImportService {
             reviewNote: string | null;
             reviewedAt: Date | null;
             resolvedClientId: string | null;
-            userId: string;
-            createdAt: Date;
-            updatedAt: Date;
         }[];
     }[]>;
     findOne(userId: string, id: string): Promise<{
         id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string;
         entryNumber: string | null;
+        photoFilename: string | null;
         addressRaw: string | null;
         membershipDurationMonths: number;
-        membershipAmount: import("@prisma/client/runtime/library").Decimal | null;
+        membershipAmount: Prisma.Decimal | null;
         paymentMode: string | null;
         joinDate: Date | null;
-        photoFilename: string | null;
         sender: string | null;
         clientName: string | null;
         clientPhone: string | null;
@@ -86,19 +90,19 @@ export declare class ImportService {
         reviewNote: string | null;
         reviewedAt: Date | null;
         resolvedClientId: string | null;
-        userId: string;
-        createdAt: Date;
-        updatedAt: Date;
     }>;
     review(userId: string, id: string, dto: ReviewImportDto): Promise<{
         id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string;
         entryNumber: string | null;
+        photoFilename: string | null;
         addressRaw: string | null;
         membershipDurationMonths: number;
-        membershipAmount: import("@prisma/client/runtime/library").Decimal | null;
+        membershipAmount: Prisma.Decimal | null;
         paymentMode: string | null;
         joinDate: Date | null;
-        photoFilename: string | null;
         sender: string | null;
         clientName: string | null;
         clientPhone: string | null;
@@ -108,9 +112,6 @@ export declare class ImportService {
         reviewNote: string | null;
         reviewedAt: Date | null;
         resolvedClientId: string | null;
-        userId: string;
-        createdAt: Date;
-        updatedAt: Date;
     }>;
     approve(userId: string, id: string, dto: ApproveImportDto): Promise<{
         message: string;
@@ -118,13 +119,16 @@ export declare class ImportService {
     }>;
     reject(userId: string, id: string, note?: string): Promise<{
         id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string;
         entryNumber: string | null;
+        photoFilename: string | null;
         addressRaw: string | null;
         membershipDurationMonths: number;
-        membershipAmount: import("@prisma/client/runtime/library").Decimal | null;
+        membershipAmount: Prisma.Decimal | null;
         paymentMode: string | null;
         joinDate: Date | null;
-        photoFilename: string | null;
         sender: string | null;
         clientName: string | null;
         clientPhone: string | null;
@@ -134,9 +138,6 @@ export declare class ImportService {
         reviewNote: string | null;
         reviewedAt: Date | null;
         resolvedClientId: string | null;
-        userId: string;
-        createdAt: Date;
-        updatedAt: Date;
     }>;
     enrichPendingFromEntryFile(userId: string, entryFolderPath: string): Promise<{
         processed: number;

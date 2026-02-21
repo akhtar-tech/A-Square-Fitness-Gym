@@ -9,7 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.WhatsAppParserService = void 0;
 const common_1 = require("@nestjs/common");
 const LINE_RE = /^[\u200e\s]*\[(\d{1,2})\/(\d{1,2})\/(\d{2,4}),\s+(\d{1,2}:\d{2}:\d{2}\s*[AP]M)\]\s+(.+?):\s*(.*)$/i;
-const PHOTO_RE = /<attached:\s*([\w.\-]+\.(?:jpg|jpeg|png|webp))\s*>/i;
+const PHOTO_RE = /<attached:\s*([\w.-]+\.(?:jpg|jpeg|png|webp))\s*>/i;
 const ENTRY_RE = /\bA-?(\d{3,4})\b/i;
 const PHONE_RE = /\b([6-9]\d{9})\b/;
 const FEES_RE = /(?:(\d+)\s*months?\s*fees?\s+)?(\d{3,5})\s*(online|cash|upi|card|bank|neft|imps|gpay|phonepe|paytm)/i;
@@ -59,7 +59,11 @@ let WhatsAppParserService = class WhatsAppParserService {
             if (m) {
                 flush();
                 const [, p1, p2, p3, time, sender, body] = m;
-                cur = { sender: sender.trim(), ts: this.parseTs(+p1, +p2, +p3, time, fmt), parts: [body] };
+                cur = {
+                    sender: sender.trim(),
+                    ts: this.parseTs(+p1, +p2, +p3, time, fmt),
+                    parts: [body],
+                };
             }
             else if (cur && line.trim()) {
                 cur.parts.push(line.trim());
@@ -72,7 +76,7 @@ let WhatsAppParserService = class WhatsAppParserService {
         const entries = [];
         const usedPhoto = new Set();
         const seenEntry = new Set();
-        const entryMsgs = msgs.filter(m => ENTRY_RE.test(m.text));
+        const entryMsgs = msgs.filter((m) => ENTRY_RE.test(m.text));
         for (const em of entryMsgs) {
             const flags = [];
             const eMatch = ENTRY_RE.exec(em.text);
@@ -162,8 +166,8 @@ let WhatsAppParserService = class WhatsAppParserService {
             return { name: null, phone: null, addrFromInfo: null };
         const lines = text
             .split('\n')
-            .map(l => l.trim())
-            .filter(l => l && !FEES_RE.test(l) && !ENTRY_RE.test(l));
+            .map((l) => l.trim())
+            .filter((l) => l && !FEES_RE.test(l) && !ENTRY_RE.test(l));
         let phone = null;
         let phoneLine = -1;
         let phonePos = -1;
@@ -181,7 +185,11 @@ let WhatsAppParserService = class WhatsAppParserService {
         let name = null;
         const addrParts = [];
         if (phoneLine === 0) {
-            name = lines[0].substring(0, phonePos).replace(/[-\s.]+$/, '').trim() || null;
+            name =
+                lines[0]
+                    .substring(0, phonePos)
+                    .replace(/[-\s.]+$/, '')
+                    .trim() || null;
             addrParts.push(...lines.slice(1));
         }
         else {
@@ -206,7 +214,10 @@ let WhatsAppParserService = class WhatsAppParserService {
                 continue;
             if (/^\d{3,5}$/.test(l))
                 continue;
-            const addr = l.replace(/\bA-?\d{3,4}\b\s*/i, '').replace(/^[-\s,]+/, '').trim();
+            const addr = l
+                .replace(/\bA-?\d{3,4}\b\s*/i, '')
+                .replace(/^[-\s,]+/, '')
+                .trim();
             if (addr)
                 parts.push(addr);
         }
@@ -225,7 +236,13 @@ let WhatsAppParserService = class WhatsAppParserService {
         }
         const cm = CASH_AMT_RE.exec(text);
         if (cm) {
-            return { duration: 1, amount: parseInt(cm[1]), mode: 'cash', isSplit: false, note: null };
+            return {
+                duration: 1,
+                amount: parseInt(cm[1]),
+                mode: 'cash',
+                isSplit: false,
+                note: null,
+            };
         }
         const splitM = /(\d{3,5})\s+(online|cash)\s+\+?\s*(\d{3,5})\s+(cash|online)/i.exec(text);
         if (splitM) {
@@ -240,9 +257,21 @@ let WhatsAppParserService = class WhatsAppParserService {
         }
         const bare = /^(\d{3,5})$/m.exec(text.trim());
         if (bare) {
-            return { duration: 1, amount: parseInt(bare[1]), mode: null, isSplit: false, note: null };
+            return {
+                duration: 1,
+                amount: parseInt(bare[1]),
+                mode: null,
+                isSplit: false,
+                note: null,
+            };
         }
-        return { duration: 1, amount: null, mode: null, isSplit: false, note: null };
+        return {
+            duration: 1,
+            amount: null,
+            mode: null,
+            isSplit: false,
+            note: null,
+        };
     }
     extractNameFromFeesMessage(text) {
         if (!FEES_RE.test(text) && !CASH_AMT_RE.test(text))

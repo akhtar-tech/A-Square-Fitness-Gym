@@ -19,6 +19,7 @@ import * as crypto from 'crypto';
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
+import { QueryClientDto } from './dto/query-client.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -37,16 +38,38 @@ export class ClientsController {
         destination: UPLOADS_DIR,
         filename: (_req, file, cb) => {
           const ext = path.extname(file.originalname).toLowerCase();
-          const name = `client-${crypto.randomBytes(8).toString('hex')}${ext}`;
+          const timestamp = Date.now();
+          const name = `client-${timestamp}-${crypto.randomBytes(8).toString('hex')}${ext}`;
           cb(null, name);
         },
       }),
       fileFilter: (_req, file, cb) => {
-        if (!file.mimetype.startsWith('image/'))
-          return cb(new BadRequestException('Only image files accepted'), false);
+        // Check MIME type
+        if (!file.mimetype.match(/\/(jpg|jpeg|png|webp)$/)) {
+          return cb(
+            new BadRequestException(
+              'Only image files (jpg, jpeg, png, webp) are allowed',
+            ),
+            false,
+          );
+        }
+
+        // Verify file extension matches
+        const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+        const fileExtension = file.originalname
+          .toLowerCase()
+          .substring(file.originalname.lastIndexOf('.'));
+
+        if (!allowedExtensions.includes(fileExtension)) {
+          return cb(new BadRequestException('Invalid file extension'), false);
+        }
+
         cb(null, true);
       },
-      limits: { fileSize: 5 * 1024 * 1024 },
+      limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB
+        files: 1,
+      },
     }),
   )
   uploadPhoto(@UploadedFile() file: Express.Multer.File) {
@@ -55,19 +78,13 @@ export class ClientsController {
   }
 
   @Post()
-  create(
-    @CurrentUser() user: { id: string },
-    @Body() dto: CreateClientDto,
-  ) {
+  create(@CurrentUser() user: { id: string }, @Body() dto: CreateClientDto) {
     return this.clientsService.create(user.id, dto);
   }
 
   @Get()
-  findAll(
-    @CurrentUser() user: { id: string },
-    @Query() query: { active?: string; search?: string },
-  ) {
-    return this.clientsService.findAll(user.id, query);
+  findAll(@CurrentUser() user: { id: string }, @Query() query: QueryClientDto) {
+    return this.clientsService.findAll(user.id, query, query.from ?? 'all');
   }
 
   @Get('expiring-soon')
@@ -76,10 +93,7 @@ export class ClientsController {
   }
 
   @Get(':id')
-  findOne(
-    @CurrentUser() user: { id: string },
-    @Param('id') id: string,
-  ) {
+  findOne(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     return this.clientsService.findOne(user.id, id);
   }
 
@@ -93,10 +107,7 @@ export class ClientsController {
   }
 
   @Delete(':id')
-  remove(
-    @CurrentUser() user: { id: string },
-    @Param('id') id: string,
-  ) {
+  remove(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     return this.clientsService.remove(user.id, id);
   }
 }

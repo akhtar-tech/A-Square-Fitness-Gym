@@ -12,6 +12,7 @@ import {
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
+import { QueryPaymentDto } from './dto/query-payment.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -21,26 +22,20 @@ export class PaymentsController {
   constructor(private paymentsService: PaymentsService) {}
 
   @Post()
-  create(
-    @CurrentUser() user: { id: string },
-    @Body() dto: CreatePaymentDto,
-  ) {
+  create(@CurrentUser() user: { id: string }, @Body() dto: CreatePaymentDto) {
     return this.paymentsService.create(user.id, dto);
   }
 
   @Get()
   findAll(
     @CurrentUser() user: { id: string },
-    @Query() query: { clientId?: string; month?: string; year?: string },
+    @Query() query: QueryPaymentDto,
   ) {
     return this.paymentsService.findAll(user.id, query);
   }
 
   @Get(':id')
-  findOne(
-    @CurrentUser() user: { id: string },
-    @Param('id') id: string,
-  ) {
+  findOne(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     return this.paymentsService.findOne(user.id, id);
   }
 
@@ -54,10 +49,7 @@ export class PaymentsController {
   }
 
   @Delete(':id')
-  remove(
-    @CurrentUser() user: { id: string },
-    @Param('id') id: string,
-  ) {
+  remove(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     return this.paymentsService.remove(user.id, id);
   }
 }

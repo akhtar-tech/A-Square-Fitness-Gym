@@ -17,6 +17,7 @@ const common_1 = require("@nestjs/common");
 const expenses_service_1 = require("./expenses.service");
 const create_expense_dto_1 = require("./dto/create-expense.dto");
 const update_expense_dto_1 = require("./dto/update-expense.dto");
+const query_expense_dto_1 = require("./dto/query-expense.dto");
 const jwt_auth_guard_1 = require("../../common/guards/jwt-auth.guard");
 const current_user_decorator_1 = require("../../common/decorators/current-user.decorator");
 let ExpensesController = class ExpensesController {
@@ -54,7 +55,7 @@ __decorate([
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:paramtypes", [Object, query_expense_dto_1.QueryExpenseDto]),
     __metadata("design:returntype", void 0)
 ], ExpensesController.prototype, "findAll", null);
 __decorate([

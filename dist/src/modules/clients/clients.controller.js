@@ -54,6 +54,7 @@ const crypto = __importStar(require("crypto"));
 const clients_service_1 = require("./clients.service");
 const create_client_dto_1 = require("./dto/create-client.dto");
 const update_client_dto_1 = require("./dto/update-client.dto");
+const query_client_dto_1 = require("./dto/query-client.dto");
 const jwt_auth_guard_1 = require("../../common/guards/jwt-auth.guard");
 const current_user_decorator_1 = require("../../common/decorators/current-user.decorator");
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
@@ -71,7 +72,7 @@ let ClientsController = class ClientsController {
         return this.clientsService.create(user.id, dto);
     }
     findAll(user, query) {
-        return this.clientsService.findAll(user.id, query);
+        return this.clientsService.findAll(user.id, query, query.from ?? 'all');
     }
     expiringSoon(user) {
         return this.clientsService.expiringSoon(user.id);
@@ -94,16 +95,28 @@ __decorate([
             destination: UPLOADS_DIR,
             filename: (_req, file, cb) => {
                 const ext = path.extname(file.originalname).toLowerCase();
-                const name = `client-${crypto.randomBytes(8).toString('hex')}${ext}`;
+                const timestamp = Date.now();
+                const name = `client-${timestamp}-${crypto.randomBytes(8).toString('hex')}${ext}`;
                 cb(null, name);
             },
         }),
         fileFilter: (_req, file, cb) => {
-            if (!file.mimetype.startsWith('image/'))
-                return cb(new common_1.BadRequestException('Only image files accepted'), false);
+            if (!file.mimetype.match(/\/(jpg|jpeg|png|webp)$/)) {
+                return cb(new common_1.BadRequestException('Only image files (jpg, jpeg, png, webp) are allowed'), false);
+            }
+            const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+            const fileExtension = file.originalname
+                .toLowerCase()
+                .substring(file.originalname.lastIndexOf('.'));
+            if (!allowedExtensions.includes(fileExtension)) {
+                return cb(new common_1.BadRequestException('Invalid file extension'), false);
+            }
             cb(null, true);
         },
-        limits: { fileSize: 5 * 1024 * 1024 },
+        limits: {
+            fileSize: 5 * 1024 * 1024,
+            files: 1,
+        },
     })),
     __param(0, (0, common_1.UploadedFile)()),
     __metadata("design:type", Function),
@@ -123,7 +136,7 @@ __decorate([
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:paramtypes", [Object, query_client_dto_1.QueryClientDto]),
     __metadata("design:returntype", void 0)
 ], ClientsController.prototype, "findAll", null);
 __decorate([

@@ -34,7 +34,18 @@ export class ReviewImportDto {
   @IsOptional()
   membershipAmount?: number;
 
-  @IsIn(['online', 'cash', 'upi', 'card', 'bank', 'neft', 'imps', 'gpay', 'phonepe', 'paytm'])
+  @IsIn([
+    'online',
+    'cash',
+    'upi',
+    'card',
+    'bank',
+    'neft',
+    'imps',
+    'gpay',
+    'phonepe',
+    'paytm',
+  ])
   @IsOptional()
   paymentMode?: string;
 

@@ -35,8 +35,8 @@ let ExpensesService = class ExpensesService {
             where.category = query.category;
         }
         if (query.month && query.year) {
-            const start = new Date(parseInt(query.year), parseInt(query.month) - 1, 1);
-            const end = new Date(parseInt(query.year), parseInt(query.month), 1);
+            const start = new Date(query.year, query.month - 1, 1);
+            const end = new Date(query.year, query.month, 1);
             where.date = { gte: start, lt: end };
         }
         const expenses = await this.prisma.expense.findMany({

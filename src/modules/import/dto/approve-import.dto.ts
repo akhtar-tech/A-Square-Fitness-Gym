@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsPhoneNumber } from 'class-validator';
+import { IsString, IsOptional } from 'class-validator';
 
 /**
  * Required fields to approve a staging entry and create a real Client record.

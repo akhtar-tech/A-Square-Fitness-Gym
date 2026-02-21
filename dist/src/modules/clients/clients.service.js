@@ -12,12 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ClientsService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../prisma/prisma.service");
-const MEMBERSHIP_MONTHS = {
-    monthly: 1,
-    quarterly: 3,
-    yearly: 12,
-    custom: 0,
-};
+const membership_constants_1 = require("../../common/constants/membership.constants");
 let ClientsService = class ClientsService {
     prisma;
     constructor(prisma) {
@@ -30,7 +25,7 @@ let ClientsService = class ClientsService {
             return new Date(customEndDate);
         }
         const end = new Date(startDate);
-        end.setMonth(end.getMonth() + MEMBERSHIP_MONTHS[membershipType]);
+        end.setMonth(end.getMonth() + membership_constants_1.MEMBERSHIP_MONTHS[membershipType]);
         return end;
     }
     async create(userId, dto) {
@@ -54,45 +49,84 @@ let ClientsService = class ClientsService {
             }, 0);
             entryNumber = String(maxNum + 1);
         }
-        const client = await this.prisma.client.create({
-            data: {
-                name: dto.name,
-                phone: dto.phone,
-                email: dto.email,
-                membershipType: dto.membershipType,
-                startDate,
-                endDate,
-                notes: dto.notes,
-                photoFilename: dto.photoFilename,
-                entryNumber: `A${entryNumber}`,
-                userId,
-            },
+        return await this.prisma.$transaction(async (tx) => {
+            const client = await tx.client.create({
+                data: {
+                    name: dto.name,
+                    phone: dto.phone,
+                    email: dto.email,
+                    membershipType: dto.membershipType,
+                    startDate,
+                    endDate,
+                    notes: dto.notes,
+                    photoFilename: dto.photoFilename,
+                    entryNumber: `A${entryNumber}`,
+                    userId,
+                },
+            });
+            await tx.payment.create({
+                data: {
+                    userId,
+                    clientId: client.id,
+                    amount: dto.initialAmount,
+                    method: dto.initialPaymentMethod ?? 'CASH',
+                    paidAt: startDate,
+                    membershipType: dto.membershipType,
+                    endDate,
+                    note: 'Initial payment',
+                },
+            });
+            return client;
         });
-        await this.prisma.payment.create({
-            data: {
-                userId,
-                clientId: client.id,
-                amount: dto.initialAmount,
-                method: dto.initialPaymentMethod ?? 'CASH',
-                paidAt: startDate,
-                membershipType: dto.membershipType,
-                endDate,
-                note: 'Initial payment',
-            },
-        });
-        return client;
     }
-    async findAll(userId, query) {
-        const where = { userId };
+    async findAll(userId, query, from) {
+        const now = new Date();
+        const baseWhere = { userId };
         if (query.active !== undefined) {
-            where.isActive = query.active === 'true';
+            baseWhere.isActive = query.active === 'true';
         }
         if (query.search) {
-            where.OR = [
+            baseWhere.OR = [
                 { name: { contains: query.search, mode: 'insensitive' } },
                 { phone: { contains: query.search, mode: 'insensitive' } },
                 { entryNumber: { contains: query.search, mode: 'insensitive' } },
             ];
+        }
+        const total = await this.prisma.client.count({ where: baseWhere });
+        const where = { ...baseWhere };
+        let currentTabTotal = total;
+        if (from === 'expiring_today') {
+            const startOfDay = new Date(now);
+            startOfDay.setHours(0, 0, 0, 0);
+            const endOfDay = new Date(now);
+            endOfDay.setHours(23, 59, 59, 999);
+            where.endDate = { gte: startOfDay, lte: endOfDay };
+            where.isActive = true;
+        }
+        else if (from === 'expiring_soon') {
+            const startOfToday = new Date(now);
+            startOfToday.setHours(0, 0, 0, 0);
+            const in2Days = new Date(startOfToday);
+            in2Days.setDate(startOfToday.getDate() + 2);
+            in2Days.setHours(23, 59, 59, 999);
+            where.endDate = { gte: startOfToday, lte: in2Days };
+            where.isActive = true;
+        }
+        else if (from === 'expired') {
+            const startOfToday = new Date(now);
+            startOfToday.setHours(0, 0, 0, 0);
+            where.endDate = { lt: startOfToday };
+            where.isActive = true;
+        }
+        if (from !== 'all') {
+            currentTabTotal = await this.prisma.client.count({ where });
+        }
+        let orderBy;
+        if (from === 'expired') {
+            orderBy = { endDate: 'desc' };
+        }
+        else if (from === 'expiring_soon' || from === 'expiring_today') {
+            orderBy = { endDate: 'asc' };
         }
         const clients = await this.prisma.client.findMany({
             where,
@@ -111,6 +145,9 @@ let ClientsService = class ClientsService {
                     },
                 },
             },
+            skip: query.skip ?? 0,
+            take: query.take ?? 50,
+            orderBy,
         });
         const toNum = (entry) => {
             if (!entry)
@@ -118,7 +155,52 @@ let ClientsService = class ClientsService {
             const digits = entry.replaceAll(/\D/g, '');
             return digits ? Number(digits) : -1;
         };
-        return clients.sort((a, b) => toNum(String(b.entryNumber ?? '')) - toNum(String(a.entryNumber ?? '')));
+        const sorted = from === 'all'
+            ? clients.toSorted((a, b) => toNum(String(b.entryNumber ?? '')) -
+                toNum(String(a.entryNumber ?? '')))
+            : clients;
+        const badgeCountWhere = { userId };
+        const startOfToday = new Date(now);
+        startOfToday.setHours(0, 0, 0, 0);
+        const endOfToday = new Date(now);
+        endOfToday.setHours(23, 59, 59, 999);
+        const in2Days = new Date(startOfToday);
+        in2Days.setDate(startOfToday.getDate() + 2);
+        in2Days.setHours(23, 59, 59, 999);
+        const [expiringTodayTotal, expiredTotal, expiringSoonTotal] = await Promise.all([
+            this.prisma.client.count({
+                where: {
+                    ...badgeCountWhere,
+                    isActive: true,
+                    endDate: { gte: startOfToday, lte: endOfToday },
+                },
+            }),
+            this.prisma.client.count({
+                where: {
+                    ...badgeCountWhere,
+                    isActive: true,
+                    endDate: { lt: startOfToday },
+                },
+            }),
+            this.prisma.client.count({
+                where: {
+                    ...badgeCountWhere,
+                    isActive: true,
+                    endDate: { gte: startOfToday, lte: in2Days },
+                },
+            }),
+        ]);
+        return {
+            data: sorted,
+            total,
+            currentTabTotal,
+            expiringTodayTotal,
+            expiredTotal,
+            expiringSoonTotal,
+            skip: query.skip ?? 0,
+            take: query.take ?? 50,
+            hasMore: (query.skip ?? 0) + sorted.length < currentTabTotal,
+        };
     }
     async findOne(userId, clientId) {
         const client = await this.prisma.client.findFirst({
@@ -160,15 +242,60 @@ let ClientsService = class ClientsService {
     }
     async expiringSoon(userId) {
         const now = new Date();
-        const in2Days = new Date();
-        in2Days.setDate(now.getDate() + 2);
+        const startOfToday = new Date(now);
+        startOfToday.setHours(0, 0, 0, 0);
+        const in2Days = new Date(startOfToday);
+        in2Days.setDate(startOfToday.getDate() + 2);
+        in2Days.setHours(23, 59, 59, 999);
         return this.prisma.client.findMany({
             where: {
                 userId,
                 isActive: true,
-                endDate: { gte: now, lte: in2Days },
+                endDate: { gte: startOfToday, lte: in2Days },
             },
             orderBy: { endDate: 'asc' },
+            select: {
+                id: true,
+                name: true,
+                phone: true,
+                endDate: true,
+                membershipType: true,
+            },
+        });
+    }
+    async expiringToday(userId) {
+        const now = new Date();
+        const startOfDay = new Date(now);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(now);
+        endOfDay.setHours(23, 59, 59, 999);
+        return this.prisma.client.findMany({
+            where: {
+                userId,
+                isActive: true,
+                endDate: { gte: startOfDay, lte: endOfDay },
+            },
+            orderBy: { endDate: 'asc' },
+            select: {
+                id: true,
+                name: true,
+                phone: true,
+                endDate: true,
+                membershipType: true,
+            },
+        });
+    }
+    async expired(userId) {
+        const now = new Date();
+        const startOfToday = new Date(now);
+        startOfToday.setHours(0, 0, 0, 0);
+        return this.prisma.client.findMany({
+            where: {
+                userId,
+                isActive: true,
+                endDate: { lt: startOfToday },
+            },
+            orderBy: { endDate: 'desc' },
             select: {
                 id: true,
                 name: true,

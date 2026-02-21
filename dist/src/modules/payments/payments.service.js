@@ -12,11 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentsService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../prisma/prisma.service");
-const MEMBERSHIP_MONTHS = {
-    monthly: 1,
-    quarterly: 3,
-    yearly: 12,
-};
+const membership_constants_1 = require("../../common/constants/membership.constants");
 let PaymentsService = class PaymentsService {
     prisma;
     constructor(prisma) {
@@ -37,7 +33,7 @@ let PaymentsService = class PaymentsService {
                     ? new Date(dto.newEndDate)
                     : (() => {
                         const d = new Date(currentEnd);
-                        d.setMonth(d.getMonth() + (MEMBERSHIP_MONTHS[dto.extendMembership] ?? 1));
+                        d.setMonth(d.getMonth() + (membership_constants_1.MEMBERSHIP_MONTHS[dto.extendMembership] ?? 1));
                         return d;
                     })();
             newMembershipType = dto.extendMembership;
@@ -53,7 +49,16 @@ let PaymentsService = class PaymentsService {
                 clientId: dto.clientId,
                 userId,
             },
-            include: { client: { select: { name: true, phone: true, photoFilename: true, entryNumber: true } } },
+            include: {
+                client: {
+                    select: {
+                        name: true,
+                        phone: true,
+                        photoFilename: true,
+                        entryNumber: true,
+                    },
+                },
+            },
         });
         const clientUpdate = {};
         if (newMembershipType && newEndDate) {
@@ -74,18 +79,44 @@ let PaymentsService = class PaymentsService {
         if (query.clientId)
             where.clientId = query.clientId;
         if (query.month && query.year) {
-            const start = new Date(+query.year, +query.month - 1, 1);
-            const end = new Date(+query.year, +query.month, 1);
+            const start = new Date(query.year, query.month - 1, 1);
+            const end = new Date(query.year, query.month, 1);
             where.paidAt = { gte: start, lt: end };
+        }
+        if (query.clientId) {
+            const total = await this.prisma.payment.count({ where });
+            const data = await this.prisma.payment.findMany({
+                where,
+                orderBy: { paidAt: 'desc' },
+                include: {
+                    client: {
+                        select: {
+                            name: true,
+                            phone: true,
+                            photoFilename: true,
+                            entryNumber: true,
+                        },
+                    },
+                },
+                skip: query.skip ?? 0,
+                take: query.take ?? 100,
+            });
+            return {
+                data,
+                total,
+                skip: query.skip ?? 0,
+                take: query.take ?? 100,
+                hasMore: (query.skip ?? 0) + data.length < total,
+            };
         }
         const latestPerClient = await this.prisma.payment.groupBy({
             by: ['clientId'],
             where,
             _max: { paidAt: true },
         });
-        return this.prisma.payment.findMany({
+        const data = await this.prisma.payment.findMany({
             where: {
-                OR: latestPerClient.map(p => ({
+                OR: latestPerClient.map((p) => ({
                     clientId: p.clientId,
                     paidAt: p._max.paidAt,
                 })),
@@ -101,7 +132,16 @@ let PaymentsService = class PaymentsService {
                     },
                 },
             },
+            skip: query.skip ?? 0,
+            take: query.take ?? 50,
         });
+        return {
+            data,
+            total: data.length,
+            skip: query.skip ?? 0,
+            take: query.take ?? 50,
+            hasMore: false,
+        };
     }
     async findOne(userId, paymentId) {
         const payment = await this.prisma.payment.findFirst({
@@ -150,22 +190,27 @@ let PaymentsService = class PaymentsService {
     async remove(userId, paymentId) {
         const payment = await this.findOne(userId, paymentId);
         const { clientId } = payment;
-        await this.prisma.payment.delete({ where: { id: paymentId } });
-        const prev = await this.prisma.payment.findFirst({
-            where: { clientId, userId },
-            orderBy: { paidAt: 'desc' },
+        return await this.prisma.$transaction(async (tx) => {
+            await tx.payment.delete({ where: { id: paymentId } });
+            const prev = await tx.payment.findFirst({
+                where: { clientId, userId },
+                orderBy: { paidAt: 'desc' },
+            });
+            if (prev) {
+                const restore = {};
+                if (prev.membershipType && prev.endDate) {
+                    restore.membershipType = prev.membershipType;
+                    restore.endDate = prev.endDate;
+                }
+                if (Object.keys(restore).length > 0) {
+                    await tx.client.update({
+                        where: { id: clientId },
+                        data: restore,
+                    });
+                }
+            }
+            return { message: 'Payment deleted' };
         });
-        if (prev) {
-            const restore = {};
-            if (prev.membershipType && prev.endDate) {
-                restore.membershipType = prev.membershipType;
-                restore.endDate = prev.endDate;
-            }
-            if (Object.keys(restore).length > 0) {
-                await this.prisma.client.update({ where: { id: clientId }, data: restore });
-            }
-        }
-        return { message: 'Payment deleted' };
     }
 };
 exports.PaymentsService = PaymentsService;

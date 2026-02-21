@@ -55,7 +55,6 @@ export class AuthService {
     });
 
     if (!user) {
-      console.log('User not found for email:', dto.email);
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -66,7 +65,8 @@ export class AuthService {
 
     const token = this.signToken(user.id, user.email, user.role);
 
-    const { password: _pw, ...safeUser } = user;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password, ...safeUser } = user;
 
     return { user: safeUser, token };
   }
@@ -85,10 +85,8 @@ export class AuthService {
   }
 
   private signToken(userId: string, email: string, role: string): string {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return this.jwt.sign({ sub: userId, email, role }, {
-      secret: this.config.get<string>('jwtSecret'),
-      expiresIn: this.config.get('jwtExpiresIn') as any,
-    } as any);
+    const payload = { sub: userId, email, role };
+    // Secret and expiresIn are already configured in JwtModule
+    return this.jwt.sign(payload);
   }
 }

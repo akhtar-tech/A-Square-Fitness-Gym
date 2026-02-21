@@ -24,7 +24,15 @@ export class CreateExpenseDto {
   @Min(0)
   amount: number;
 
-  @IsIn(['RENT', 'UTILITIES', 'EQUIPMENT', 'SALARIES', 'MAINTENANCE', 'MARKETING', 'OTHER'])
+  @IsIn([
+    'RENT',
+    'UTILITIES',
+    'EQUIPMENT',
+    'SALARIES',
+    'MAINTENANCE',
+    'MARKETING',
+    'OTHER',
+  ])
   category: ExpenseCategoryType;
 
   @IsString()

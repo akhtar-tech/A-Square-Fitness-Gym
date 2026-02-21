@@ -87,7 +87,6 @@ let AuthService = class AuthService {
             where: { email: dto.email },
         });
         if (!user) {
-            console.log('User not found for email:', dto.email);
             throw new common_1.UnauthorizedException('Invalid credentials');
         }
         const valid = await bcrypt.compare(dto.password, user.password);
@@ -95,7 +94,7 @@ let AuthService = class AuthService {
             throw new common_1.UnauthorizedException('Invalid credentials');
         }
         const token = this.signToken(user.id, user.email, user.role);
-        const { password: _pw, ...safeUser } = user;
+        const { password, ...safeUser } = user;
         return { user: safeUser, token };
     }
     async me(userId) {
@@ -111,10 +110,8 @@ let AuthService = class AuthService {
         });
     }
     signToken(userId, email, role) {
-        return this.jwt.sign({ sub: userId, email, role }, {
-            secret: this.config.get('jwtSecret'),
-            expiresIn: this.config.get('jwtExpiresIn'),
-        });
+        const payload = { sub: userId, email, role };
+        return this.jwt.sign(payload);
     }
 };
 exports.AuthService = AuthService;

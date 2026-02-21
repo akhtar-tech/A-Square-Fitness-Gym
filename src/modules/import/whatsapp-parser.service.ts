@@ -25,12 +25,14 @@ interface Msg {
 }
 
 // [9/16/24, 6:13:02 AM] or [16/09/24, 6:13:02 AM]
-const LINE_RE = /^[\u200e\s]*\[(\d{1,2})\/(\d{1,2})\/(\d{2,4}),\s+(\d{1,2}:\d{2}:\d{2}\s*[AP]M)\]\s+(.+?):\s*(.*)$/i;
-const PHOTO_RE = /<attached:\s*([\w.\-]+\.(?:jpg|jpeg|png|webp))\s*>/i;
-const ENTRY_RE = /\bA-?(\d{3,4})\b/i;     // A2400, A-2449, A2403
-const PHONE_RE = /\b([6-9]\d{9})\b/;       // Indian 10-digit mobile
+const LINE_RE =
+  /^[\u200e\s]*\[(\d{1,2})\/(\d{1,2})\/(\d{2,4}),\s+(\d{1,2}:\d{2}:\d{2}\s*[AP]M)\]\s+(.+?):\s*(.*)$/i;
+const PHOTO_RE = /<attached:\s*([\w.-]+\.(?:jpg|jpeg|png|webp))\s*>/i;
+const ENTRY_RE = /\bA-?(\d{3,4})\b/i; // A2400, A-2449, A2403
+const PHONE_RE = /\b([6-9]\d{9})\b/; // Indian 10-digit mobile
 // N month fees AMOUNT MODE  OR  AMOUNT MODE  OR  CASH-AMOUNT
-const FEES_RE = /(?:(\d+)\s*months?\s*fees?\s+)?(\d{3,5})\s*(online|cash|upi|card|bank|neft|imps|gpay|phonepe|paytm)/i;
+const FEES_RE =
+  /(?:(\d+)\s*months?\s*fees?\s+)?(\d{3,5})\s*(online|cash|upi|card|bank|neft|imps|gpay|phonepe|paytm)/i;
 const CASH_AMT_RE = /CASH[-\s]*(\d{3,5})/i;
 const WINDOW_SEC = 120;
 
@@ -82,7 +84,11 @@ export class WhatsAppParserService {
       if (m) {
         flush();
         const [, p1, p2, p3, time, sender, body] = m;
-        cur = { sender: sender.trim(), ts: this.parseTs(+p1, +p2, +p3, time, fmt), parts: [body] };
+        cur = {
+          sender: sender.trim(),
+          ts: this.parseTs(+p1, +p2, +p3, time, fmt),
+          parts: [body],
+        };
       } else if (cur && line.trim()) {
         cur.parts.push(line.trim());
       }
@@ -98,7 +104,7 @@ export class WhatsAppParserService {
     const seenEntry = new Set<string>();
 
     // Only process messages that contain an entry number
-    const entryMsgs = msgs.filter(m => ENTRY_RE.test(m.text));
+    const entryMsgs = msgs.filter((m) => ENTRY_RE.test(m.text));
 
     for (const em of entryMsgs) {
       const flags: string[] = [];
@@ -206,8 +212,8 @@ export class WhatsAppParserService {
 
     const lines = text
       .split('\n')
-      .map(l => l.trim())
-      .filter(l => l && !FEES_RE.test(l) && !ENTRY_RE.test(l));
+      .map((l) => l.trim())
+      .filter((l) => l && !FEES_RE.test(l) && !ENTRY_RE.test(l));
 
     // Find phone number across lines
     let phone: string | null = null;
@@ -231,7 +237,11 @@ export class WhatsAppParserService {
 
     if (phoneLine === 0) {
       // "Vikas 9818682821" or "Anurag-8287570903"
-      name = lines[0].substring(0, phonePos).replace(/[-\s.]+$/, '').trim() || null;
+      name =
+        lines[0]
+          .substring(0, phonePos)
+          .replace(/[-\s.]+$/, '')
+          .trim() || null;
       addrParts.push(...lines.slice(1));
     } else {
       // Phone on later line: first line = name, in-between = address
@@ -257,7 +267,10 @@ export class WhatsAppParserService {
       if (!l || FEES_RE.test(l) || CASH_AMT_RE.test(l)) continue;
       if (/^\d{3,5}$/.test(l)) continue; // bare amount
       // Strip entry number prefix
-      const addr = l.replace(/\bA-?\d{3,4}\b\s*/i, '').replace(/^[-\s,]+/, '').trim();
+      const addr = l
+        .replace(/\bA-?\d{3,4}\b\s*/i, '')
+        .replace(/^[-\s,]+/, '')
+        .trim();
       if (addr) parts.push(addr);
     }
     return parts.join(', ').trim() || null;
@@ -286,11 +299,18 @@ export class WhatsAppParserService {
     // "CASH-500" or "CASH 500"
     const cm = CASH_AMT_RE.exec(text);
     if (cm) {
-      return { duration: 1, amount: parseInt(cm[1]), mode: 'cash', isSplit: false, note: null };
+      return {
+        duration: 1,
+        amount: parseInt(cm[1]),
+        mode: 'cash',
+        isSplit: false,
+        note: null,
+      };
     }
 
     // Check for split: "300 online 200 cash"
-    const splitM = /(\d{3,5})\s+(online|cash)\s+\+?\s*(\d{3,5})\s+(cash|online)/i.exec(text);
+    const splitM =
+      /(\d{3,5})\s+(online|cash)\s+\+?\s*(\d{3,5})\s+(cash|online)/i.exec(text);
     if (splitM) {
       const total = parseInt(splitM[1]) + parseInt(splitM[3]);
       return {
@@ -305,10 +325,22 @@ export class WhatsAppParserService {
     // Bare amount on its own (e.g. standalone "500" message)
     const bare = /^(\d{3,5})$/m.exec(text.trim());
     if (bare) {
-      return { duration: 1, amount: parseInt(bare[1]), mode: null, isSplit: false, note: null };
+      return {
+        duration: 1,
+        amount: parseInt(bare[1]),
+        mode: null,
+        isSplit: false,
+        note: null,
+      };
     }
 
-    return { duration: 1, amount: null, mode: null, isSplit: false, note: null };
+    return {
+      duration: 1,
+      amount: null,
+      mode: null,
+      isSplit: false,
+      note: null,
+    };
   }
 
   // ── Extract name from a fees-style entry message ─────────────────

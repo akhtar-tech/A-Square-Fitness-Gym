@@ -29,7 +29,15 @@ __decorate([
     __metadata("design:type", Number)
 ], CreateExpenseDto.prototype, "amount", void 0);
 __decorate([
-    (0, class_validator_1.IsIn)(['RENT', 'UTILITIES', 'EQUIPMENT', 'SALARIES', 'MAINTENANCE', 'MARKETING', 'OTHER']),
+    (0, class_validator_1.IsIn)([
+        'RENT',
+        'UTILITIES',
+        'EQUIPMENT',
+        'SALARIES',
+        'MAINTENANCE',
+        'MARKETING',
+        'OTHER',
+    ]),
     __metadata("design:type", String)
 ], CreateExpenseDto.prototype, "category", void 0);
 __decorate([
