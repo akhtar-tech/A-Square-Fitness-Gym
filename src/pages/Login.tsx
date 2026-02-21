@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Form, Input, Button, Card, Typography, Alert } from 'antd'
 import { useAuth } from '@/context/AuthContext'
+import { getErrorMessage, logError } from '@/utils/errorHandler'
 
 const { Title, Text } = Typography
 
@@ -18,19 +19,14 @@ export default function LoginPage() {
       await login(values.email, values.password)
       navigate('/dashboard')
     } catch (e: unknown) {
-      const data = (e as { response?: { data?: unknown } })?.response?.data as
-        | { message?: unknown }
-        | undefined
-      const raw = data?.message ?? 'Login failed. Check your credentials.'
-      let msg: string
-      if (Array.isArray(raw)) {
-        msg = raw.join(', ')
-      } else if (typeof raw === 'object' && raw !== null) {
-        msg = 'Login failed. Check your credentials.'
+      logError('Login', e)
+      const message = getErrorMessage(e)
+      // Enhanced error message for rate limiting
+      if (message.includes('Too many requests')) {
+        setError('Too many login attempts. Please wait 60 seconds and try again.')
       } else {
-        msg = String(raw)
+        setError(message || 'Login failed. Check your credentials.')
       }
-      setError(msg)
     } finally {
       setLoading(false)
     }

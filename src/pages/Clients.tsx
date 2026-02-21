@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Table,
   Button,
@@ -15,7 +15,6 @@ import {
   message,
   Switch,
   Card,
-  Input as AntInput,
   Avatar,
   Upload,
   Tooltip,
@@ -31,7 +30,6 @@ import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
-  SearchOutlined,
   UserOutlined,
   CameraOutlined,
   EnvironmentOutlined,
@@ -40,7 +38,8 @@ import {
 } from '@ant-design/icons'
 import { clientsApi, Client, CreateClientPayload, clientPhotoUrl } from '@/api/clients.api'
 import { paymentsApi } from '@/api/payments.api'
-import dayjs from 'dayjs'
+import { dayjs } from '@/utils/date'
+import { useFilters } from '@/contexts/FilterContext'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -55,13 +54,12 @@ function getExpiry(client: Client): dayjs.Dayjs {
 type ClientPayment = NonNullable<Client['payments']>[number]
 
 export default function ClientsPage() {
+  const { filters } = useFilters()
   const [allClients, setAllClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingClient, setEditingClient] = useState<Client | null>(null)
-  const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<'all' | 'expired' | 'expiring' | 'today'>('all')
-  const [dateFilter, setDateFilter] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([null, null])
   const [form] = Form.useForm()
   const membershipType = Form.useWatch('membershipType', form)
 
@@ -78,11 +76,50 @@ export default function ClientsPage() {
   const [paymentForm] = Form.useForm()
   const [savingPayment, setSavingPayment] = useState(false)
 
+  // ── Payment modal ────────────────────────────────────────────────────────────
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false)
+  const [paymentModalClient, setPaymentModalClient] = useState<Client | null>(null)
+  const [paymentModalTab, setPaymentModalTab] = useState<'new' | 'history'>('new')
+  const [newPaymentForm] = Form.useForm()
+  const [editPaymentForm] = Form.useForm()
+  const [clientPayments, setClientPayments] = useState<NonNullable<Client['payments']>>([])
+  const [loadingPayments, setLoadingPayments] = useState(false)
+  const [editingPaymentInHistory, setEditingPaymentInHistory] = useState<string | null>(null)
+  const [savingNewPayment, setSavingNewPayment] = useState(false)
+
+  // ── Pagination state ────────────────────────────────────────────────────────
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const [totalRecords, setTotalRecords] = useState(0)
+  const [currentTabTotalRecords, setCurrentTabTotalRecords] = useState(0)
+  const [expiringTodayTotalRecords, setexpiringTodayTotalRecords] = useState(0)
+  const [expiredTotalRecords, setexpiredTotalRecords] = useState(0)
+  const [expiringSoonTotalRecords, setexpiringSoonTotalRecords] = useState(0)
+
   const fetchClients = async () => {
     setLoading(true)
     try {
-      const res = await clientsApi.list()
-      setAllClients(res.data)
+      const skip = (currentPage - 1) * pageSize
+      let condition = 'all'
+      if(activeTab === 'expired') {
+        condition = 'expired'
+      } else if(activeTab === 'expiring') {
+        condition = 'expiring_soon'
+      } else if(activeTab === 'today') {
+        condition = 'expiring_today'
+      }
+      const res = await clientsApi.list({
+        skip,
+        take: pageSize,
+        search: filters.search || undefined,
+        from: condition
+      })
+      setAllClients(res.data.data)
+      setTotalRecords(res.data.total)
+      setCurrentTabTotalRecords(res.data.currentTabTotal)
+      setexpiringTodayTotalRecords(res.data.expiringTodayTotal)
+      setexpiredTotalRecords(res.data.expiredTotal)
+      setexpiringSoonTotalRecords(res.data.expiringSoonTotal)
     } finally {
       setLoading(false)
     }
@@ -90,40 +127,13 @@ export default function ClientsPage() {
 
   useEffect(() => {
     fetchClients()
-  }, [])
+  }, [activeTab, pageSize, currentPage, filters.search]) // Refetch when tab, page, page size, or search changes
 
-  // ── Client-side filtering ───────────────────────────────────────────────────
-
-  const now = dayjs()
-  const soon = dayjs().add(7, 'day')
-
-  const searchFilter = (c: Client) => {
-    if (!search) return true
-    const q = search.toLowerCase()
-    return (
-      c.name.toLowerCase().includes(q) ||
-      (c.phone ?? '').toLowerCase().includes(q) ||
-      (c.entryNumber ?? '').toLowerCase().includes(q)
-    )
-  }
-
-  const { tabAll, tabExpired, tabExpiring, tabToday } = useMemo(() => {
-    const searched = allClients.filter(searchFilter)
-    return {
-      tabAll: searched,
-      tabExpired: searched.filter((c) => getExpiry(c).isBefore(now)),
-      tabExpiring: searched.filter((c) => {
-        const exp = getExpiry(c)
-        return !exp.isBefore(now) && !exp.isAfter(soon)
-      }),
-      tabToday: searched.filter((c) => getExpiry(c).isSame(now, 'day')),
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allClients, search])
-
-  // Apply optional date filter on top of the tab data
+  // Apply optional date filter on the data returned from backend
   const applyDateFilter = (data: Client[]) => {
-    const [from, to] = dateFilter
+    const dateRange = filters.dateRange
+    if (!dateRange) return data
+    const [from, to] = dateRange
     if (!from && !to) return data
     return data.filter((c) => {
       const exp = getExpiry(c)
@@ -133,16 +143,8 @@ export default function ClientsPage() {
     })
   }
 
-  const baseData =
-    activeTab === 'expired'
-      ? tabExpired
-      : activeTab === 'expiring'
-        ? tabExpiring
-        : activeTab === 'today'
-          ? tabToday
-          : tabAll
-
-  const currentData = applyDateFilter(baseData)
+  // Backend already filters by tab and search, so just apply date filter
+  const currentData = applyDateFilter(allClients)
 
   // ── Modal helpers ───────────────────────────────────────────────────────────
 
@@ -285,6 +287,123 @@ export default function ClientsPage() {
     }
   }
 
+  // ── Payment modal handlers ──────────────────────────────────────────────────
+
+  const openPaymentModal = async (client: Client) => {
+    setPaymentModalClient(client)
+    setPaymentModalTab('new')
+    setEditingPaymentInHistory(null)
+    newPaymentForm.resetFields()
+    newPaymentForm.setFieldsValue({
+      paidAt: dayjs(),
+      method: 'CASH',
+      extendMembership: 'monthly',
+    })
+    setPaymentModalOpen(true)
+
+    // Fetch payment history
+    setLoadingPayments(true)
+    try {
+      const res = await paymentsApi.list({ clientId: client.id })
+      setClientPayments(res.data.data)
+    } catch {
+      message.error('Failed to load payment history')
+    } finally {
+      setLoadingPayments(false)
+    }
+  }
+
+  const closePaymentModal = () => {
+    setPaymentModalOpen(false)
+    setPaymentModalClient(null)
+    setClientPayments([])
+    setEditingPaymentInHistory(null)
+  }
+
+  const onCreatePayment = async () => {
+    if (!paymentModalClient) return
+    const values = await newPaymentForm.validateFields()
+    setSavingNewPayment(true)
+    try {
+      await paymentsApi.create({
+        clientId: paymentModalClient.id,
+        amount: values.amount,
+        method: values.method || 'CASH',
+        paidAt: values.paidAt ? values.paidAt.toISOString() : undefined,
+        extendMembership: values.extendMembership || 'none',
+        newEndDate:
+          values.extendMembership === 'custom' && values.newEndDate
+            ? values.newEndDate.toISOString()
+            : undefined,
+        note: values.note || undefined,
+      })
+      message.success('Payment added successfully')
+      newPaymentForm.resetFields()
+      newPaymentForm.setFieldsValue({
+        paidAt: dayjs(),
+        method: 'CASH',
+        extendMembership: 'monthly',
+      })
+
+      // Refresh payment history
+      const res = await paymentsApi.list({ clientId: paymentModalClient.id })
+      setClientPayments(res.data.data)
+
+      // Refresh clients list
+      fetchClients()
+
+      // Switch to history tab to see the new payment
+      setPaymentModalTab('history')
+    } catch {
+      message.error('Failed to add payment')
+    } finally {
+      setSavingNewPayment(false)
+    }
+  }
+
+  const onUpdatePayment = async (paymentId: string) => {
+    const values = await editPaymentForm.validateFields()
+    try {
+      await paymentsApi.update(paymentId, {
+        amount: values.amount,
+        method: values.method || undefined,
+        note: values.note || undefined,
+        paidAt: values.paidAt ? values.paidAt.toISOString() : undefined,
+      })
+      message.success('Payment updated successfully')
+      setEditingPaymentInHistory(null)
+
+      // Refresh payment history
+      if (paymentModalClient) {
+        const res = await paymentsApi.list({ clientId: paymentModalClient.id })
+        setClientPayments(res.data.data)
+      }
+
+      // Refresh clients list
+      fetchClients()
+    } catch {
+      message.error('Failed to update payment')
+    }
+  }
+
+  const onDeletePayment = async (paymentId: string) => {
+    try {
+      await paymentsApi.delete(paymentId)
+      message.success('Payment deleted successfully')
+
+      // Refresh payment history
+      if (paymentModalClient) {
+        const res = await paymentsApi.list({ clientId: paymentModalClient.id })
+        setClientPayments(res.data.data)
+      }
+
+      // Refresh clients list
+      fetchClients()
+    } catch {
+      message.error('Failed to delete payment')
+    }
+  }
+
   // ── Table columns ───────────────────────────────────────────────────────────
 
   const columns = [
@@ -409,7 +528,17 @@ export default function ClientsPage() {
       key: 'actions',
       render: (_: unknown, record: Client) => (
         <Space>
-          <Button icon={<EditOutlined />} size="small" onClick={() => openEdit(record)} />
+          <Tooltip title="Make Payment">
+            <Button
+              icon={<span style={{ fontSize: 14 }}>₹</span>}
+              size="small"
+              type="primary"
+              onClick={() => openPaymentModal(record)}
+            />
+          </Tooltip>
+          <Tooltip title="Edit Client">
+            <Button icon={<EditOutlined />} size="small" onClick={() => openEdit(record)} />
+          </Tooltip>
           <Popconfirm
             title="Delete this client?"
             onConfirm={() => onDelete(record.id)}
@@ -431,7 +560,7 @@ export default function ClientsPage() {
       label: (
         <span>
           All&nbsp;
-          <Badge count={tabAll.length} showZero style={{ backgroundColor: '#1677ff' }} />
+          <Badge count={totalRecords} showZero style={{ backgroundColor: '#1677ff' }} />
         </span>
       ),
     },
@@ -441,9 +570,9 @@ export default function ClientsPage() {
         <span>
           Expires Today&nbsp;
           <Badge
-            count={tabToday.length}
+            count={expiringTodayTotalRecords}
             showZero
-            style={{ backgroundColor: tabToday.length > 0 ? '#ff4d4f' : '#d9d9d9' }}
+            style={{ backgroundColor: expiringTodayTotalRecords > 0 ? '#ff4d4f' : '#d9d9d9' }}
           />
         </span>
       ),
@@ -454,9 +583,9 @@ export default function ClientsPage() {
         <span>
           Expiring Soon&nbsp;
           <Badge
-            count={tabExpiring.length}
+            count={expiringSoonTotalRecords}
             showZero
-            style={{ backgroundColor: tabExpiring.length > 0 ? '#fa8c16' : '#d9d9d9' }}
+            style={{ backgroundColor: expiringSoonTotalRecords > 0 ? '#fa8c16' : '#d9d9d9' }}
           />
         </span>
       ),
@@ -467,9 +596,9 @@ export default function ClientsPage() {
         <span>
           Expired&nbsp;
           <Badge
-            count={tabExpired.length}
+            count={expiredTotalRecords}
             showZero
-            style={{ backgroundColor: tabExpired.length > 0 ? '#595959' : '#d9d9d9' }}
+            style={{ backgroundColor: expiredTotalRecords > 0 ? '#595959' : '#d9d9d9' }}
           />
         </span>
       ),
@@ -861,49 +990,12 @@ export default function ClientsPage() {
       </div>
 
       <Card bordered={false}>
-        <Row gutter={[12, 12]} style={{ marginBottom: 16 }} align="middle">
-          <Col>
-            <AntInput
-              placeholder="Search by entry number, name or phone..."
-              prefix={<SearchOutlined />}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ width: 300 }}
-              allowClear
-            />
-          </Col>
-          <Col>
-            <DatePicker.RangePicker
-              placeholder={['Expiry from', 'Expiry to']}
-              value={dateFilter}
-              onChange={(vals) =>
-                setDateFilter(vals ? [vals[0], vals[1]] : [null, null])
-              }
-              allowEmpty={[true, true]}
-              format="DD MMM YYYY"
-            />
-          </Col>
-          <Col>
-            <DatePicker
-              placeholder="Single expiry date"
-              value={dateFilter[0] && !dateFilter[1] ? dateFilter[0] : null}
-              onChange={(val) => setDateFilter(val ? [val, null] : [null, null])}
-              format="DD MMM YYYY"
-              allowClear
-            />
-          </Col>
-          {(dateFilter[0] || dateFilter[1]) && (
-            <Col>
-              <Button size="small" onClick={() => setDateFilter([null, null])}>
-                Clear filter
-              </Button>
-            </Col>
-          )}
-        </Row>
-
         <Tabs
           activeKey={activeTab}
-          onChange={(k) => setActiveTab(k as 'all' | 'expired' | 'expiring' | 'today')}
+          onChange={(k) => {
+            setActiveTab(k as 'all' | 'expired' | 'expiring' | 'today')
+            setCurrentPage(1) // Reset to first page when changing tabs
+          }}
           items={tabItems}
           style={{ marginBottom: 0 }}
         />
@@ -913,7 +1005,22 @@ export default function ClientsPage() {
           columns={columns}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 15 }}
+          pagination={{
+            current: currentPage,
+            pageSize: pageSize,
+            total: currentTabTotalRecords,
+            showSizeChanger: true,
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} clients`,
+            pageSizeOptions: ['10', '25', '50', '100'],
+            onChange: (page, newPageSize) => {
+              if (newPageSize !== pageSize) {
+                setPageSize(newPageSize)
+                setCurrentPage(1)
+              } else {
+                setCurrentPage(page)
+              }
+            },
+          }}
           scroll={{ x: 1000 }}
         />
       </Card>
@@ -942,6 +1049,252 @@ export default function ClientsPage() {
         ) : (
           addModalContent
         )}
+      </Modal>
+
+      {/* ── Payment Modal ──────────────────────────────────────────────── */}
+      <Modal
+        title={
+          paymentModalClient
+            ? `Payments - ${paymentModalClient.name} (${paymentModalClient.entryNumber || 'N/A'})`
+            : 'Payments'
+        }
+        open={paymentModalOpen}
+        onCancel={closePaymentModal}
+        footer={null}
+        width={700}
+        destroyOnClose
+      >
+        <Divider style={{ margin: '0 0 16px' }} />
+        <Tabs
+          activeKey={paymentModalTab}
+          onChange={(k) => {
+            setPaymentModalTab(k as 'new' | 'history')
+            setEditingPaymentInHistory(null)
+          }}
+          items={[
+            {
+              key: 'new',
+              label: 'New Payment',
+              children: (
+                <Form form={newPaymentForm} layout="vertical" onFinish={onCreatePayment}>
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="amount"
+                        label="Amount (₹)"
+                        rules={[{ required: true, message: 'Amount is required' }]}
+                      >
+                        <InputNumber
+                          min={0}
+                          style={{ width: '100%' }}
+                          placeholder="e.g. 1200"
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item name="method" label="Payment Method">
+                        <Select>
+                          <Option value="CASH">Cash</Option>
+                          <Option value="UPI">UPI</Option>
+                          <Option value="CARD">Card</Option>
+                          <Option value="BANK_TRANSFER">Bank Transfer</Option>
+                        </Select>
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.Item name="paidAt" label="Payment Date">
+                        <DatePicker style={{ width: '100%' }} format="DD MMM YYYY" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item name="extendMembership" label="Extend Membership">
+                        <Select>
+                          <Option value="none">No Extension</Option>
+                          <Option value="monthly">Monthly (1 month)</Option>
+                          <Option value="quarterly">Quarterly (3 months)</Option>
+                          <Option value="yearly">Yearly (12 months)</Option>
+                          <Option value="custom">Custom</Option>
+                        </Select>
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  {Form.useWatch('extendMembership', newPaymentForm) === 'custom' && (
+                    <Form.Item
+                      name="newEndDate"
+                      label="New End Date"
+                      rules={[
+                        { required: true, message: 'End date required for custom extension' },
+                      ]}
+                    >
+                      <DatePicker style={{ width: '100%' }} format="DD MMM YYYY" />
+                    </Form.Item>
+                  )}
+
+                  <Form.Item name="note" label="Note (optional)">
+                    <Input.TextArea rows={2} placeholder="e.g. Received via UPI" />
+                  </Form.Item>
+
+                  <Form.Item>
+                    <Space>
+                      <Button type="primary" htmlType="submit" loading={savingNewPayment}>
+                        Save Payment
+                      </Button>
+                      <Button onClick={closePaymentModal}>Cancel</Button>
+                    </Space>
+                  </Form.Item>
+                </Form>
+              ),
+            },
+            {
+              key: 'history',
+              label: `Payment History (${clientPayments?.length || 0})`,
+              children: loadingPayments ? (
+                <div style={{ textAlign: 'center', padding: 32 }}>
+                  <Spin tip="Loading payment history..." />
+                </div>
+              ) : !clientPayments || clientPayments.length === 0 ? (
+                <div style={{ textAlign: 'center', color: '#999', padding: 24 }}>
+                  No payment records found.
+                </div>
+              ) : (
+                <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+                  {clientPayments.map((payment) => {
+                    const isEditing = editingPaymentInHistory === payment.id
+                    return isEditing ? (
+                      <div
+                        key={payment.id}
+                        style={{
+                          border: '1px solid #1677ff',
+                          borderRadius: 8,
+                          padding: 12,
+                          marginBottom: 8,
+                          background: '#e6f4ff',
+                        }}
+                      >
+                        <Form
+                          form={editPaymentForm}
+                          layout="vertical"
+                          size="small"
+                          onFinish={() => onUpdatePayment(payment.id)}
+                        >
+                          <Row gutter={12}>
+                            <Col span={12}>
+                              <Form.Item
+                                name="amount"
+                                label="Amount (₹)"
+                                rules={[{ required: true }]}
+                              >
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                              </Form.Item>
+                            </Col>
+                            <Col span={12}>
+                              <Form.Item name="method" label="Method">
+                                <Select>
+                                  <Option value="CASH">Cash</Option>
+                                  <Option value="UPI">UPI</Option>
+                                  <Option value="CARD">Card</Option>
+                                  <Option value="BANK_TRANSFER">Bank Transfer</Option>
+                                </Select>
+                              </Form.Item>
+                            </Col>
+                          </Row>
+                          <Row gutter={12}>
+                            <Col span={12}>
+                              <Form.Item name="paidAt" label="Payment Date">
+                                <DatePicker style={{ width: '100%' }} format="DD MMM YYYY" />
+                              </Form.Item>
+                            </Col>
+                            <Col span={12}>
+                              <Form.Item name="note" label="Note">
+                                <Input placeholder="Optional note" />
+                              </Form.Item>
+                            </Col>
+                          </Row>
+                          <Space>
+                            <Button type="primary" size="small" htmlType="submit">
+                              Save
+                            </Button>
+                            <Button size="small" onClick={() => setEditingPaymentInHistory(null)}>
+                              Cancel
+                            </Button>
+                          </Space>
+                        </Form>
+                      </div>
+                    ) : (
+                      <div
+                        key={payment.id}
+                        style={{
+                          border: '1px solid #f0f0f0',
+                          borderRadius: 8,
+                          padding: 12,
+                          marginBottom: 8,
+                          background: '#fafafa',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'flex-start',
+                        }}
+                      >
+                        <div>
+                          <Space size={6}>
+                            <Text strong>₹{Number(payment.amount).toLocaleString()}</Text>
+                            <Tag style={{ fontSize: 11 }}>{payment.method}</Tag>
+                            {payment.membershipType && (
+                              <Tag color="blue" style={{ fontSize: 11 }}>
+                                {payment.membershipType}
+                              </Tag>
+                            )}
+                          </Space>
+                          <div style={{ marginTop: 4 }}>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              {dayjs(payment.paidAt).format('DD MMM YYYY')}
+                              {payment.note && ` · ${payment.note}`}
+                            </Text>
+                            {payment.endDate && (
+                              <Text style={{ fontSize: 12, color: '#52c41a', marginLeft: 8 }}>
+                                Expires: {dayjs(payment.endDate).format('DD MMM YYYY')}
+                              </Text>
+                            )}
+                          </div>
+                        </div>
+                        <Space>
+                          <Button
+                            icon={<EditOutlined />}
+                            size="small"
+                            onClick={() => {
+                              setEditingPaymentInHistory(payment.id)
+                              editPaymentForm.setFieldsValue({
+                                amount: Number(payment.amount),
+                                method: payment.method,
+                                note: payment.note ?? '',
+                                paidAt: dayjs(payment.paidAt),
+                              })
+                            }}
+                          >
+                            Edit
+                          </Button>
+                          <Popconfirm
+                            title="Delete this payment?"
+                            onConfirm={() => onDeletePayment(payment.id)}
+                            okText="Yes"
+                            cancelText="No"
+                          >
+                            <Button icon={<DeleteOutlined />} size="small" danger>
+                              Delete
+                            </Button>
+                          </Popconfirm>
+                        </Space>
+                      </div>
+                    )
+                  })}
+                </div>
+              ),
+            },
+          ]}
+        />
       </Modal>
     </div>
   )

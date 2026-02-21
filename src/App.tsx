@@ -6,7 +6,7 @@ import DashboardPage from '@/pages/Dashboard'
 import ClientsPage from '@/pages/Clients'
 import PaymentsPage from '@/pages/Payments'
 import ExpensesPage from '@/pages/Expenses'
-import ImportPage from '@/pages/Import'
+// import ImportPage from '@/pages/Import'
 
 export default function App() {
   return (

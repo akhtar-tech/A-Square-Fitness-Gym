@@ -9,10 +9,11 @@ import {
   MenuUnfoldOutlined,
   LogoutOutlined,
   UserOutlined,
-  WhatsAppOutlined,
+  // WhatsAppOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import { FilterBar } from '@/components/filters/FilterBar'
 
 const { Header, Sider, Content } = Layout
 const { Text } = Typography
@@ -141,6 +142,8 @@ export default function AppLayout() {
             </div>
           </Dropdown>
         </Header>
+
+        <FilterBar />
 
         <Content
           style={{

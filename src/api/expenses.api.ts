@@ -1,4 +1,5 @@
 import api from './axios'
+import { PaginationParams } from '@/types/pagination'
 
 export type ExpenseCategory =
   | 'RENT'
@@ -19,6 +20,8 @@ export interface Expense {
   createdAt: string
 }
 
+// Note: Backend returns { expenses: Expense[], total: number }
+// not paginated like clients/payments
 export interface ExpensesResponse {
   expenses: Expense[]
   total: number
@@ -33,7 +36,7 @@ export interface CreateExpensePayload {
 }
 
 export const expensesApi = {
-  list: (params?: { month?: number; year?: number; category?: string }) =>
+  list: (params?: { month?: number; year?: number; category?: string } & PaginationParams) =>
     api.get<ExpensesResponse>('/expenses', { params }),
 
   getOne: (id: string) =>

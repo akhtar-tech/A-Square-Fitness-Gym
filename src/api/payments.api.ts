@@ -1,4 +1,5 @@
 import api from './axios'
+import { PaginatedResponse, PaginationParams } from '@/types/pagination'
 
 export interface Payment {
   id: string
@@ -29,8 +30,8 @@ export interface UpdatePaymentPayload {
 }
 
 export const paymentsApi = {
-  list: (params?: { clientId?: string; month?: number; year?: number }) =>
-    api.get<Payment[]>('/payments', { params }),
+  list: (params?: { clientId?: string; month?: number; year?: number } & PaginationParams) =>
+    api.get<PaginatedResponse<Payment>>('/payments', { params }),
 
   getOne: (id: string) =>
     api.get<Payment>(`/payments/${id}`),

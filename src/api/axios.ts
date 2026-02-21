@@ -15,6 +15,7 @@ api.interceptors.request.use((config) => {
 })
 
 // On 401 → clear token and redirect to login
+// On 429 → add helpful error message for rate limiting
 api.interceptors.response.use(
   (res) => res,
   (error) => {
@@ -23,6 +24,12 @@ api.interceptors.response.use(
       localStorage.removeItem('user')
       //window.location.href = '/login'
     }
+
+    // Handle rate limiting
+    if (error.response?.status === 429) {
+      error.message = 'Too many requests. Please wait a moment and try again.'
+    }
+
     return Promise.reject(error)
   },
 )

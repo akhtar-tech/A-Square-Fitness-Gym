@@ -45,16 +45,18 @@ import {
   EnrichResult,
   photoUrl,
 } from '@/api/import.api'
-import dayjs from 'dayjs'
+import { dayjs } from '@/utils/date'
+import { getErrorMessage, logError } from '@/utils/errorHandler'
+import { PAGINATION } from '@/constants/pagination'
 
 const { Title, Text } = Typography
 const { Dragger } = Upload
 const { Option } = Select
 
 const DEFAULT_FEES_PATH =
-  '/home/akhtar-siddi/my-gym/data/new/WhatsApp Chat - Monthly fees'
+  import.meta.env.VITE_DEFAULT_FEES_PATH || '/home/akhtar-siddi/my-gym/data/new/WhatsApp Chat - Monthly fees'
 const DEFAULT_ENTRY_PATH =
-  '/home/akhtar-siddi/my-gym/data/new/WhatsApp Chat - New gym entry'
+  import.meta.env.VITE_DEFAULT_ENTRY_PATH || '/home/akhtar-siddi/my-gym/data/new/WhatsApp Chat - New gym entry'
 
 // ─── Extend ImportedClient with pre-computed row span for the table ───────────
 interface FlatRecord extends ImportedClient {
@@ -100,6 +102,9 @@ export default function ImportPage() {
     try {
       const res = await importApi.list(tab)
       setGroups(res.data)
+    } catch (err) {
+      logError('Import list load', err)
+      message.error('Failed to load import records')
     } finally {
       setLoading(false)
     }
@@ -122,9 +127,9 @@ export default function ImportPage() {
       )
       load('PENDING')
       setActiveTab('PENDING')
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { message?: string } } }
-      message.error(err?.response?.data?.message ?? 'Import failed')
+    } catch (err) {
+      logError('Import from path', err)
+      message.error(getErrorMessage(err) || 'Import failed')
     } finally {
       setImporting(false)
     }
@@ -142,9 +147,9 @@ export default function ImportPage() {
       )
       load('PENDING')
       setActiveTab('PENDING')
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { message?: string } } }
-      message.error(err?.response?.data?.message ?? 'Upload failed')
+    } catch (err) {
+      logError('Import upload', err)
+      message.error(getErrorMessage(err) || 'Upload failed')
     } finally {
       setImporting(false)
     }
@@ -168,9 +173,9 @@ export default function ImportPage() {
         message.success(`All matched! ${autoApproved} auto-approved.`)
       }
       load('PENDING')
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { message?: string } } }
-      message.error(err?.response?.data?.message ?? 'Enrich failed')
+    } catch (err) {
+      logError('Import enrich', err)
+      message.error(getErrorMessage(err) || 'Enrich failed')
     } finally {
       setEnriching(false)
     }
@@ -213,9 +218,9 @@ export default function ImportPage() {
       }
       setModal((m) => ({ ...m, open: false }))
       load(activeTab)
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { message?: string } } }
-      message.error(err?.response?.data?.message ?? 'Failed')
+    } catch (err) {
+      logError('Import modal save', err)
+      message.error(getErrorMessage(err) || 'Failed')
     } finally {
       setSaving(false)
     }
@@ -226,9 +231,9 @@ export default function ImportPage() {
       await importApi.approve(r.id, {})
       message.success('Client created!')
       load(activeTab)
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { message?: string } } }
-      message.error(err?.response?.data?.message ?? 'Approval failed')
+    } catch (err) {
+      logError('Import quick approve', err)
+      message.error(getErrorMessage(err) || 'Approval failed')
     }
   }
 
@@ -237,7 +242,8 @@ export default function ImportPage() {
       await importApi.reject(id)
       message.success('Rejected')
       load(activeTab)
-    } catch {
+    } catch (err) {
+      logError('Import reject', err)
       message.error('Failed')
     }
   }
@@ -626,7 +632,7 @@ export default function ImportPage() {
           rowKey="id"
           loading={loading}
           scroll={{ x: 980 }}
-          pagination={{ pageSize: 50, showSizeChanger: true }}
+          pagination={{ pageSize: PAGINATION.IMPORT_PAGE_SIZE, showSizeChanger: true }}
           rowClassName={(r) =>
             r.needsManualReview && activeTab === 'PENDING'
               ? 'ant-table-row-selected'

@@ -1,0 +1,5 @@
+export const PAGINATION = {
+  DEFAULT_PAGE_SIZE: 15,
+  LARGE_PAGE_SIZE: 20,
+  IMPORT_PAGE_SIZE: 50,
+} as const

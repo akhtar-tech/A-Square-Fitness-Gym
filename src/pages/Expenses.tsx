@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import {
   Table,
   Button,
@@ -20,7 +20,11 @@ import {
 } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons'
 import { expensesApi, Expense, CreateExpensePayload, ExpenseCategory } from '@/api/expenses.api'
-import dayjs, { Dayjs } from 'dayjs'
+import { dayjs } from '@/utils/date'
+import type { Dayjs } from 'dayjs'
+import { logError } from '@/utils/errorHandler'
+import { PAGINATION } from '@/constants/pagination'
+import { useFilters } from '@/contexts/FilterContext'
 
 const { Title } = Typography
 const { Option } = Select
@@ -36,31 +40,47 @@ const CATEGORIES: { value: ExpenseCategory; label: string; color: string }[] = [
 ]
 
 export default function ExpensesPage() {
+  const { filters, setFilter } = useFilters()
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
-  const [filterMonth, setFilterMonth] = useState<Dayjs>(dayjs())
   const [form] = Form.useForm()
 
-  const fetchExpenses = async (month: Dayjs) => {
+  // Get month/year from global filters, default to current month
+  const monthYear = filters.monthYear as { month: number; year: number } | undefined
+  const currentMonth = monthYear || { month: dayjs().month() + 1, year: dayjs().year() }
+
+  const fetchExpenses = async () => {
     setLoading(true)
     try {
       const res = await expensesApi.list({
-        month: month.month() + 1,
-        year: month.year(),
+        month: currentMonth.month,
+        year: currentMonth.year,
       })
       setExpenses(res.data.expenses)
       setTotal(res.data.total)
+    } catch (err) {
+      logError('Expenses fetch', err)
+      message.error('Failed to load expenses')
     } finally {
       setLoading(false)
     }
   }
 
+  // Initialize filter to current month if not set
   useEffect(() => {
-    fetchExpenses(filterMonth)
-  }, [filterMonth])
+    if (!monthYear) {
+      setFilter('monthYear', { month: dayjs().month() + 1, year: dayjs().year() })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    fetchExpenses()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentMonth.month, currentMonth.year])
 
   const openAdd = () => {
     setEditingExpense(null)
@@ -100,8 +120,9 @@ export default function ExpensesPage() {
         message.success('Expense added')
       }
       setModalOpen(false)
-      fetchExpenses(filterMonth)
-    } catch {
+      fetchExpenses()
+    } catch (err) {
+      logError('Expense save', err)
       message.error('Failed to save expense')
     }
   }
@@ -110,64 +131,118 @@ export default function ExpensesPage() {
     try {
       await expensesApi.delete(id)
       message.success('Expense deleted')
-      fetchExpenses(filterMonth)
-    } catch {
+      fetchExpenses()
+    } catch (err) {
+      logError('Expense delete', err)
       message.error('Failed to delete')
     }
   }
 
-  const columns = [
-    {
-      title: 'Title',
-      dataIndex: 'title',
-      key: 'title',
-      render: (v: string) => <strong>{v}</strong>,
-    },
-    {
-      title: 'Category',
-      dataIndex: 'category',
-      key: 'category',
-      render: (v: ExpenseCategory) => {
-        const cat = CATEGORIES.find((c) => c.value === v)
-        return <Tag color={cat?.color}>{cat?.label ?? v}</Tag>
+  // Client-side filtering for search and date range
+  const filteredExpenses = useMemo(() => {
+    let data = expenses
+
+    // Search filter
+    const search = filters.search
+    if (search) {
+      const q = search.toLowerCase()
+      data = data.filter((exp) => {
+        return (
+          exp.title.toLowerCase().includes(q) ||
+          (exp.description ?? '').toLowerCase().includes(q) ||
+          exp.category.toLowerCase().includes(q)
+        )
+      })
+    }
+
+    // Date range filter
+    const dateRange = filters.dateRange as [any, any] | undefined
+    if (dateRange && (dateRange[0] || dateRange[1])) {
+      data = data.filter((exp) => {
+        const expDate = dayjs(exp.date)
+        const fromDate = dateRange[0] ? dayjs(dateRange[0]).startOf('day') : null
+        const toDate = dateRange[1] ? dayjs(dateRange[1]).endOf('day') : null
+
+        if (fromDate && toDate) {
+          return expDate.isAfter(fromDate) && expDate.isBefore(toDate)
+        } else if (fromDate) {
+          return expDate.isAfter(fromDate)
+        } else if (toDate) {
+          return expDate.isBefore(toDate)
+        }
+        return true
+      })
+    }
+
+    return data
+  }, [expenses, filters.search, filters.dateRange])
+
+  const columns = useMemo(
+    () => [
+      {
+        title: 'Title',
+        dataIndex: 'title',
+        key: 'title',
+        render: (v: string) => <strong>{v}</strong>,
       },
-    },
-    {
-      title: 'Amount',
-      dataIndex: 'amount',
-      key: 'amount',
-      render: (v: number) => (
-        <strong style={{ color: '#f5222d' }}>₹{Number(v).toLocaleString()}</strong>
-      ),
-    },
-    {
-      title: 'Description',
-      dataIndex: 'description',
-      key: 'description',
-      render: (v: string) => v || '—',
-    },
-    {
-      title: 'Date',
-      dataIndex: 'date',
-      key: 'date',
-      render: (v: string) => dayjs(v).format('DD MMM YYYY'),
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      render: (_: unknown, record: Expense) => (
-        <Space>
-          <Button icon={<EditOutlined />} size="small" onClick={() => openEdit(record)} />
-          <Popconfirm
-            title="Delete this expense?"
-            onConfirm={() => onDelete(record.id)}
-          >
-            <Button icon={<DeleteOutlined />} size="small" danger />
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ]
+      {
+        title: 'Category',
+        dataIndex: 'category',
+        key: 'category',
+        render: (v: ExpenseCategory) => {
+          const cat = CATEGORIES.find((c) => c.value === v)
+          return <Tag color={cat?.color}>{cat?.label ?? v}</Tag>
+        },
+      },
+      {
+        title: 'Amount',
+        dataIndex: 'amount',
+        key: 'amount',
+        render: (v: number) => (
+          <strong style={{ color: '#f5222d' }}>₹{Number(v).toLocaleString()}</strong>
+        ),
+      },
+      {
+        title: 'Description',
+        dataIndex: 'description',
+        key: 'description',
+        render: (v: string) => v || '—',
+      },
+      {
+        title: 'Date',
+        dataIndex: 'date',
+        key: 'date',
+        render: (v: string) => dayjs(v).format('DD MMM YYYY'),
+      },
+      {
+        title: 'Actions',
+        key: 'actions',
+        render: (_: unknown, record: Expense) => (
+          <Space>
+            <Button
+              icon={<EditOutlined />}
+              size="small"
+              onClick={() => openEdit(record)}
+              aria-label="Edit expense"
+            />
+            <Popconfirm
+              title="Delete this expense?"
+              onConfirm={() => onDelete(record.id)}
+            >
+              <Button
+                icon={<DeleteOutlined />}
+                size="small"
+                danger
+                aria-label="Delete expense"
+              />
+            </Popconfirm>
+          </Space>
+        ),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
 
   return (
     <div>
@@ -192,29 +267,22 @@ export default function ExpensesPage() {
         <Col>
           <Card size="small" style={{ background: '#fff1f0', border: 'none' }}>
             <Statistic
-              title={`Total — ${filterMonth.format('MMMM YYYY')}`}
+              title={`Total — ${dayjs().month(currentMonth.month - 1).year(currentMonth.year).format('MMMM YYYY')}`}
               value={total}
               prefix="₹"
               valueStyle={{ color: '#f5222d', fontWeight: 700 }}
             />
           </Card>
         </Col>
-        <Col style={{ display: 'flex', alignItems: 'center' }}>
-          <DatePicker
-            picker="month"
-            value={filterMonth}
-            onChange={(v) => v && setFilterMonth(v)}
-          />
-        </Col>
       </Row>
 
       <Card bordered={false}>
         <Table
-          dataSource={expenses}
+          dataSource={filteredExpenses}
           columns={columns}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 15 }}
+          pagination={{ pageSize: PAGINATION.DEFAULT_PAGE_SIZE }}
         />
       </Card>
 

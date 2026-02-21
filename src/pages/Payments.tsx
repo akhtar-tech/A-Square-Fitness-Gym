@@ -5,6 +5,7 @@ import {
   Modal,
   Form,
   Select,
+  Input,
   InputNumber,
   DatePicker,
   Tag,
@@ -13,15 +14,12 @@ import {
   message,
   Card,
   Space,
-  Input,
   Alert,
   Tabs,
   Badge,
   Tooltip,
   Avatar,
   Image,
-  Row,
-  Col,
 } from 'antd'
 import {
   PlusOutlined,
@@ -29,18 +27,20 @@ import {
   CheckOutlined,
   CloseOutlined,
   ClockCircleOutlined,
-  SearchOutlined,
   UserOutlined,
 } from '@ant-design/icons'
+import { PAGINATION } from '@/constants/pagination'
 import { paymentsApi, Payment, CreatePaymentPayload } from '@/api/payments.api'
 import { clientsApi, Client, clientPhotoUrl } from '@/api/clients.api'
 import { importApi, ImportedClient } from '@/api/import.api'
-import dayjs from 'dayjs'
+import { dayjs } from '@/utils/date'
+import { useFilters } from '@/contexts/FilterContext'
 
 const { Title, Text } = Typography
 const { Option } = Select
 
 export default function PaymentsPage() {
+  const { filters } = useFilters()
   const [activeTab, setActiveTab] = useState<'history' | 'pending'>('history')
 
   // ── Payment history state ────────────────────────────────────────────────
@@ -52,14 +52,6 @@ export default function PaymentsPage() {
   const extendMembership = Form.useWatch('extendMembership', addForm)
   const selectedClientId = Form.useWatch('clientId', addForm)
   const selectedClient = clients.find(c => c.id === selectedClientId) ?? null
-
-  // ── History search + date filter state ───────────────────────────────────
-  const [search, setSearch] = useState('')
-  const [dateFilter, setDateFilter] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([null, null])
-
-  // ── Pending search + date filter state ───────────────────────────────────
-  const [pendingSearch, setPendingSearch] = useState('')
-  const [pendingDateFilter, setPendingDateFilter] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([null, null])
 
   // ── Pending imports state ────────────────────────────────────────────────
   const [pending, setPending] = useState<ImportedClient[]>([])
@@ -77,8 +69,8 @@ export default function PaymentsPage() {
   const fetchPayments = async () => {
     setHistoryLoading(true)
     try {
-      const res = await paymentsApi.list()
-      setPayments(res.data)
+      const res = await paymentsApi.list({ take: 100 }) // Fetch all payments for now
+      setPayments(res.data.data) // Updated: response is now paginated
     } finally {
       setHistoryLoading(false)
     }
@@ -96,7 +88,7 @@ export default function PaymentsPage() {
 
   useEffect(() => {
     fetchPayments()
-    clientsApi.list().then(r => setClients(r.data))
+    clientsApi.list({ take: 1000 }).then(r => setClients(r.data.data)) // Updated: paginated response
     fetchPending()
   }, [])
 
@@ -105,7 +97,8 @@ export default function PaymentsPage() {
     if (selectedClient) {
       addForm.setFieldsValue({ extendMembership: selectedClient.membershipType })
     }
-  }, [selectedClientId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClientId, selectedClient])
 
   // ── Add Payment ──────────────────────────────────────────────────────────
   const openAddModal = () => {
@@ -213,6 +206,9 @@ export default function PaymentsPage() {
   // ── Filtered payments (client-side) ─────────────────────────────────────
   const filteredPayments = useMemo(() => {
     let data = payments
+
+    // Search filter
+    const search = filters.search
     if (search) {
       const q = search.toLowerCase()
       data = data.filter((p) => {
@@ -224,23 +220,49 @@ export default function PaymentsPage() {
         )
       })
     }
-    const [from, to] = dateFilter
-    if (from || to) {
+
+    // Date range filter
+    const dateRange = filters.dateRange as [any, any] | undefined
+    if (dateRange && (dateRange[0] || dateRange[1])) {
       data = data.filter((p) => {
-        const d = dayjs(p.paidAt)
-        if (from && to) return !d.isBefore(from, 'day') && !d.isAfter(to, 'day')
-        if (from) return d.isSame(from, 'day')
+        const paidDate = dayjs(p.paidAt)
+        const fromDate = dateRange[0] ? dayjs(dateRange[0]).startOf('day') : null
+        const toDate = dateRange[1] ? dayjs(dateRange[1]).endOf('day') : null
+
+        if (fromDate && toDate) {
+          return paidDate.isAfter(fromDate) && paidDate.isBefore(toDate)
+        } else if (fromDate) {
+          return paidDate.isAfter(fromDate)
+        } else if (toDate) {
+          return paidDate.isBefore(toDate)
+        }
         return true
       })
     }
+
+    // Month/Year filter
+    const monthYear = filters.monthYear as { month: number; year: number } | undefined
+    if (monthYear) {
+      data = data.filter((p) => {
+        const paidDate = dayjs(p.paidAt)
+        return (
+          paidDate.month() === monthYear.month - 1 && // dayjs months are 0-indexed
+          paidDate.year() === monthYear.year
+        )
+      })
+    }
+
     return data
-  }, [payments, search, dateFilter])
+  }, [payments, filters.search, filters.dateRange, filters.monthYear])
 
   // ── Filtered pending (client-side) ──────────────────────────────────────
   const filteredPending = useMemo(() => {
     let data = pending
-    if (pendingSearch) {
-      const q = pendingSearch.toLowerCase()
+
+    // Search filter
+    const search = filters.search
+    if (search) {
+      const q = search.toLowerCase()
       data = data.filter(
         (p) =>
           (p.entryNumber ?? '').toLowerCase().includes(q) ||
@@ -248,18 +270,42 @@ export default function PaymentsPage() {
           (p.paymentMode ?? '').toLowerCase().includes(q),
       )
     }
-    const [from, to] = pendingDateFilter
-    if (from || to) {
+
+    // Date range filter (using joinDate)
+    const dateRange = filters.dateRange as [any, any] | undefined
+    if (dateRange && (dateRange[0] || dateRange[1])) {
       data = data.filter((p) => {
         if (!p.joinDate) return false
-        const d = dayjs(p.joinDate)
-        if (from && to) return !d.isBefore(from, 'day') && !d.isAfter(to, 'day')
-        if (from) return d.isSame(from, 'day')
+        const joinDate = dayjs(p.joinDate)
+        const fromDate = dateRange[0] ? dayjs(dateRange[0]).startOf('day') : null
+        const toDate = dateRange[1] ? dayjs(dateRange[1]).endOf('day') : null
+
+        if (fromDate && toDate) {
+          return joinDate.isAfter(fromDate) && joinDate.isBefore(toDate)
+        } else if (fromDate) {
+          return joinDate.isAfter(fromDate)
+        } else if (toDate) {
+          return joinDate.isBefore(toDate)
+        }
         return true
       })
     }
+
+    // Month/Year filter (using joinDate)
+    const monthYear = filters.monthYear as { month: number; year: number } | undefined
+    if (monthYear) {
+      data = data.filter((p) => {
+        if (!p.joinDate) return false
+        const joinDate = dayjs(p.joinDate)
+        return (
+          joinDate.month() === monthYear.month - 1 && // dayjs months are 0-indexed
+          joinDate.year() === monthYear.year
+        )
+      })
+    }
+
     return data
-  }, [pending, pendingSearch, pendingDateFilter])
+  }, [pending, filters.search, filters.dateRange, filters.monthYear])
 
   // ── Columns: payment history ─────────────────────────────────────────────
   const historyColumns = [
@@ -492,55 +538,14 @@ export default function PaymentsPage() {
         />
 
         {activeTab === 'history' && (
-          <>
-            <Row gutter={[12, 12]} style={{ margin: '12px 0' }} align="middle">
-              <Col>
-                <Input
-                  placeholder="Search by name, phone or entry number..."
-                  prefix={<SearchOutlined />}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  style={{ width: 280 }}
-                  allowClear
-                />
-              </Col>
-              <Col>
-                <DatePicker.RangePicker
-                  placeholder={['Payment from', 'Payment to']}
-                  value={dateFilter}
-                  onChange={(vals) =>
-                    setDateFilter(vals ? [vals[0], vals[1]] : [null, null])
-                  }
-                  allowEmpty={[true, true]}
-                  format="DD MMM YYYY"
-                />
-              </Col>
-              <Col>
-                <DatePicker
-                  placeholder="Single payment date"
-                  value={dateFilter[0] && !dateFilter[1] ? dateFilter[0] : null}
-                  onChange={(val) => setDateFilter(val ? [val, null] : [null, null])}
-                  format="DD MMM YYYY"
-                  allowClear
-                />
-              </Col>
-              {(dateFilter[0] || dateFilter[1]) && (
-                <Col>
-                  <Button size="small" onClick={() => setDateFilter([null, null])}>
-                    Clear
-                  </Button>
-                </Col>
-              )}
-            </Row>
-            <Table
-              dataSource={filteredPayments}
-              columns={historyColumns}
-              rowKey="id"
-              loading={historyLoading}
-              pagination={{ pageSize: 15 }}
-              scroll={{ x: 800 }}
-            />
-          </>
+          <Table
+            dataSource={filteredPayments}
+            columns={historyColumns}
+            rowKey="id"
+            loading={historyLoading}
+            pagination={{ pageSize: PAGINATION.DEFAULT_PAGE_SIZE }}
+            scroll={{ x: 800 }}
+          />
         )}
 
         {activeTab === 'pending' && (
@@ -551,51 +556,12 @@ export default function PaymentsPage() {
               style={{ margin: '12px 0' }}
               message="Monthly fee records where the entry number couldn't be matched to a client. Resolve to link and record payment, or reject to dismiss."
             />
-            <Row gutter={[12, 12]} style={{ marginBottom: 12 }} align="middle">
-              <Col>
-                <Input
-                  placeholder="Search by entry #, name or mode..."
-                  prefix={<SearchOutlined />}
-                  value={pendingSearch}
-                  onChange={(e) => setPendingSearch(e.target.value)}
-                  style={{ width: 260 }}
-                  allowClear
-                />
-              </Col>
-              <Col>
-                <DatePicker.RangePicker
-                  placeholder={['Date from', 'Date to']}
-                  value={pendingDateFilter}
-                  onChange={(vals) =>
-                    setPendingDateFilter(vals ? [vals[0], vals[1]] : [null, null])
-                  }
-                  allowEmpty={[true, true]}
-                  format="DD MMM YYYY"
-                />
-              </Col>
-              <Col>
-                <DatePicker
-                  placeholder="Single date"
-                  value={pendingDateFilter[0] && !pendingDateFilter[1] ? pendingDateFilter[0] : null}
-                  onChange={(val) => setPendingDateFilter(val ? [val, null] : [null, null])}
-                  format="DD MMM YYYY"
-                  allowClear
-                />
-              </Col>
-              {(pendingDateFilter[0] || pendingDateFilter[1]) && (
-                <Col>
-                  <Button size="small" onClick={() => setPendingDateFilter([null, null])}>
-                    Clear
-                  </Button>
-                </Col>
-              )}
-            </Row>
             <Table
               dataSource={filteredPending}
               columns={pendingColumns}
               rowKey="id"
               loading={pendingLoading}
-              pagination={{ pageSize: 20 }}
+              pagination={{ pageSize: PAGINATION.LARGE_PAGE_SIZE }}
               locale={{ emptyText: 'No pending payment imports' }}
               scroll={{ x: 800 }}
             />

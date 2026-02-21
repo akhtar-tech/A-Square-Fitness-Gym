@@ -1,11 +1,9 @@
 import api from './axios'
+import { getPhotoUrl } from '@/utils/urls'
+import { PaginatedResponse, PaginationParams } from '@/types/pagination'
 
 /** Build a URL to display a photo stored in the backend uploads folder */
-export const clientPhotoUrl = (filename: string | null | undefined): string | null => {
-  if (!filename) return null
-  const base = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1').replace('/api/v1', '')
-  return `${base}/uploads/${filename}`
-}
+export const clientPhotoUrl = getPhotoUrl
 
 export interface Client {
   id: string
@@ -47,8 +45,8 @@ export interface CreateClientPayload {
 }
 
 export const clientsApi = {
-  list: (params?: { active?: boolean; search?: string }) =>
-    api.get<Client[]>('/clients', { params }),
+  list: (params?: { active?: boolean; search?: string, from?: string } & PaginationParams) =>
+    api.get<PaginatedResponse<Client>>('/clients', { params }),
 
   getOne: (id: string) =>
     api.get<Client>(`/clients/${id}`),
